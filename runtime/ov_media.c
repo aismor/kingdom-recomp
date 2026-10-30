@@ -2,7 +2,7 @@
 // contributors).
 // The hardware Opus decoder (nn::codec), decoded with libopus on the host. The software keyboard (nn::swkbd) is
 // in swkbd_win.c.
-#include <windows.h>
+#include "os.h"
 #include <stdint.h>
 #include <limits.h>
 #include <stdlib.h>

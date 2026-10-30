@@ -12,7 +12,7 @@
 // The 40 layout goldens themselves are run by --probe-nvn-tex against nvn_tex.c; here four of them go through the procs.
 // Ported in part from MacNativeGames games/totk/tests/texture_auto_layout/probe.c @ b75be8cf (MIT, Copyright (c) 2026
 // jhaizhou; origin d2r-mobile): the golden metadata, which holds no game bytes.
-#include <windows.h>
+#include "os.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

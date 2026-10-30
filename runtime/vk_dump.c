@@ -23,7 +23,7 @@
 // before the submission (vk_exec_draw.c upd_note).
 // TOTK_DUMP_SKIP_RUNS=1: a render pass with the same targets as the render pass before it is logged but not copied
 // (the terrain decals draw one pass each into the G-buffer and would use up both caps).
-#include <windows.h>
+#include "os.h"
 #include <math.h>
 #include <stdarg.h>
 #include <stdio.h>

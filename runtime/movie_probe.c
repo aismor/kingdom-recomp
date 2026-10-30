@@ -7,7 +7,7 @@
 //   2. paced at 60 presents per second (fake clock): at most one frame per present, one frame per 2 presents, no drops;
 //   3. paced at 15 presents per second: late frames are dropped, the frame handed over is the one due.
 // Without the RomFS (no game data) it prints why and exits 0. TOTK_PROBE_MOVIE_SHOT=<file.ppm> saves the middle frame.
-#include <windows.h>
+#include "os.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>

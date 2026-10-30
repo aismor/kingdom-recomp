@@ -17,8 +17,7 @@
 // TOTK_ROMFS_MODS; unset or "0" = none. A missing path, a size or hash mismatch or a changed original stops the start.
 // An overlay file is opened when the game opens it; its identity (volume, file id, size, last write) is kept from the
 // start check, and an open that finds another file there stops the game.
-#include <windows.h>
-#include <bcrypt.h>
+#include "os.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

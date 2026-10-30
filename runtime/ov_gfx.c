@@ -5,7 +5,7 @@
 //   nv::*        record the game's allocator callbacks and graphics work memory (guest addresses) for the NVN layer
 //   nn::vi::*    display, layer and native window identities; the vsync event is bound here
 //   nvnBootstrapLoader   the end of --boot (rt_boot_event "nvn"); otherwise the synthetic address of an NVN proc (nvn_procs.c)
-#include <windows.h>
+#include "os.h"
 #include <stdint.h>
 
 #include "gfx.h"

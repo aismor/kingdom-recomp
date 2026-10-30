@@ -1,9 +1,12 @@
 // Host input sampling (runtime/input_win.c): SDL3 gamepad and the keyboard as one Switch npad.
 #pragma once
 #include <stdint.h>
-#ifdef _WIN32
-#include <windows.h>
-#endif
+#include "os.h"
+
+// Mouse camera and cursor (input_win.c / gfx_window_sdl.c).
+int input_window_msg(HWND h, UINT m, WPARAM w, LPARAM l, LRESULT *res);
+int input_cursor_released(void);
+int menu_window_msg(HWND h, UINT m, WPARAM w, LPARAM l, LRESULT *res);
 
 // Bits of libnx HidNpadButton (A=0 B=1 X=2 Y=3 StickL=4 StickR=5 L=6 R=7 ZL=8 ZR=9 Plus=10 Minus=11 Left=12 Up=13 Right=14
 // Down=15) and the stick directions (StickLLeft..Down 16-19, StickRLeft..Down 20-23, derived from the sticks).
@@ -39,16 +42,7 @@ int input_capture(int reset, int *id);
 // The character on a punctuation key (KEY_MINUS..KEY_GRAVE) in the keyboard layout in use, 0 for another key.
 uint32_t input_key_char(int key);
 
-// Mouse camera and cursor (input_win.c, Win32 window thread). The window procedure calls input_window_msg first for raw
-// mouse input, cursor hiding and confinement; it returns 1 with *res set when the message is handled. input_cursor_suspend(1)
-// releases the cursor around an F11 window change, (0) captures it again once the client area has its new size.
-#ifdef _WIN32
-int input_window_msg(HWND h, UINT m, WPARAM w, LPARAM l, LRESULT *res);
-int input_cursor_released(void);   // Esc or a non-client activation released the cursor (probe)
-// The menu's Win32 adapter (ui/menu_win.cpp), called next: F1 / Esc open or close the menu; while it is open, keys,
-// mouse and focus go to it. Returns 1 with *res set when the message is fully handled.
-int menu_window_msg(HWND h, UINT m, WPARAM w, LPARAM l, LRESULT *res);
-#endif
+// Mouse camera and cursor (input_win.c, gfx_window_sdl.c). input_cursor_suspend releases the cursor around F11 resize.
 void input_cursor_suspend(int on);
 
 // Rumble: SDL_RumbleGamepad on the open gamepad, low (heavy, left) and high (light, right) motor 0..65535 for ms

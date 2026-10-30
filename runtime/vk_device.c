@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <windows.h>
+#include "os.h"
 
 #include "cfg.h"
 #include "host.h"
@@ -42,8 +42,23 @@ static int layer_present(const char *name) {
 }
 
 static int create_instance(void) {
+#ifdef _WIN32
     const char *ext[4] = {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WIN32_SURFACE_EXTENSION_NAME};
     uint32_t n_ext = 2;
+#else
+    const char *ext[8];
+    uint32_t n_ext = 0;
+    ext[n_ext++] = VK_KHR_SURFACE_EXTENSION_NAME;
+#if defined(VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME)
+    ext[n_ext++] = VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME;
+#endif
+#if defined(VK_KHR_XLIB_SURFACE_EXTENSION_NAME)
+    ext[n_ext++] = VK_KHR_XLIB_SURFACE_EXTENSION_NAME;
+#endif
+#if defined(VK_KHR_XCB_SURFACE_EXTENSION_NAME)
+    ext[n_ext++] = VK_KHR_XCB_SURFACE_EXTENSION_NAME;
+#endif
+#endif
     const char *layers[] = {"VK_LAYER_KHRONOS_validation"};
     int validate = cfg_bool("TOTK_VK_VALIDATION");
     if (validate && !layer_present(layers[0])) {
@@ -94,8 +109,11 @@ static const char *missing_required(VkPhysicalDevice pd) {
 // Graphics+compute family that can present on win32.
 static uint32_t find_gfx_family(VkPhysicalDevice pd, const VkQueueFamilyProperties *qp, uint32_t nq) {
     for (uint32_t i = 0; i < nq; i++)
-        if ((qp[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) && (qp[i].queueFlags & VK_QUEUE_COMPUTE_BIT) &&
-            vkGetPhysicalDeviceWin32PresentationSupportKHR(pd, i))
+        if ((qp[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) && (qp[i].queueFlags & VK_QUEUE_COMPUTE_BIT)
+#if defined(_WIN32)
+            && vkGetPhysicalDeviceWin32PresentationSupportKHR(pd, i)
+#endif
+            )
             return i;
     return UINT32_MAX;
 }

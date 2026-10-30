@@ -8,12 +8,17 @@
 // Cpu. The SDK's nn::os runs as lifted code; only the kernel under it is the host. Every wait hangs on one global lock
 // G with one condition variable per thread; wake order is the kernel's: lower priority value first, then first come.
 // Semantics follow the public Horizon kernel (KConditionVariable, KAddressArbiter, KSynchronization).
-#include <windows.h>
-#define __USE_MINGW_SETJMP_NON_SEH   // setjmp(b) = _setjmp(b, NULL): longjmp restores registers, no SEH unwinding
+#include "os.h"
+#ifndef _WIN32
 #include <setjmp.h>
+#else
+#define __USE_MINGW_SETJMP_NON_SEH
+#include <setjmp.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <wchar.h>
 
 #include "cfg.h"
 #include "host.h"
@@ -162,7 +167,7 @@ static void wait_add(WaitRec *w, int st, uint64_t obj, uint32_t waker, uint64_t 
 }
 
 // Close the current state's interval and enter st.
-static void acct(RtThread *t, int st) {
+static void sched_acct(RtThread *t, int st) {
     if (!(rt_trace & RT_TRACE_SCHED)) return;
     uint64_t now = kern_now_ns();
     if (t->st_since) {
@@ -343,6 +348,7 @@ static int g_ap_log;              // redirects logged so far (AP_LOG_N)
 static uintptr_t g_gen_lo, g_gen_hi;   // host code of the lifted modules: first and last function start
 static uint64_t g_ap_sent, g_ap_taken, g_ap_host, g_ap_pc, g_ap_deferred, g_ap_fail, g_ap_spin_ok;
 void kern_ap_stub(void);
+void kern_ap_yield(void);
 
 static void ap_init(void) {
     if (g_ap >= 0) return;
@@ -403,6 +409,7 @@ static int ap_disabled(const RtThread *t) { return g_ap > 0 && ap_tlr(t)[0]; }
 // in kern_ap_yield and jumps back to kern_ap_rip(), whose value it first stores in the return slot it reserved at
 // entry, so a stack walk sees the interrupted function as its caller. No ret: the jump keeps call/return pairs
 // balanced. The waiter never writes the owner's stack.
+#ifdef _WIN32
 __asm__(".text\n"
         ".globl kern_ap_stub\n"
         ".def kern_ap_stub; .scl 2; .type 32; .endef\n"
@@ -488,6 +495,11 @@ __asm__(".text\n"
         "    leaq 8(%rsp), %rsp\n"
         "    jmpq *-8(%rsp)\n"
         ".seh_endproc\n");
+#else
+void kern_ap_stub(void) {
+    kern_ap_yield();
+}
+#endif
 
 enum { AP_NONE, AP_RETRY, AP_SENT };
 
@@ -868,7 +880,7 @@ static void core_kick(void) {
 static void core_take(RtThread *t) {
     if (t->cur_core >= 0) return;
     if (!cores_enabled()) {
-        acct(t, S_RUN);
+        sched_acct(t, S_RUN);
         return;
     }
     if (!(t->mask & ((1u << NCORE) - 1)))
@@ -880,10 +892,10 @@ static void core_take(RtThread *t) {
         t->cur_core = c;
         g_core_owner[c] = t;
         core_count();
-        acct(t, S_RUN);
+        sched_acct(t, S_RUN);
         return;
     }
-    acct(t, S_CORE);
+    sched_acct(t, S_CORE);
     t->cseq = ++g_wseq;
     t->cnext = g_core_wait;
     g_core_wait = t;
@@ -922,14 +934,14 @@ static void core_take(RtThread *t) {
         t->grant_at = 0;
     }
     t->target = NULL;
-    acct(t, S_RUN);
+    sched_acct(t, S_RUN);
 }
 
 static uint32_t block(RtThread *t, int kind, int64_t ns) {
     t->waker = 0;
     if (ns == 0) return block_inner(t, kind, ns);
     core_put(t);
-    acct(t, st_of(kind));
+    sched_acct(t, st_of(kind));
     t->nblk++;
     uint32_t r = block_inner(t, kind, ns);
     core_take(t);
@@ -941,7 +953,7 @@ int kern_core_away(void) {
     if (!t || t->cur_core < 0) return 0;
     lock();
     core_put(t);
-    acct(t, S_HOST);
+    sched_acct(t, S_HOST);
     if (rt_trace & RT_TRACE_SCHED)   // the caller as an exe RVA (totk.map)
         t->wobj = (uintptr_t)__builtin_return_address(0) - (uintptr_t)GetModuleHandleW(NULL);
     unlock();
@@ -1160,7 +1172,7 @@ void kern_sched_report(uint64_t frame) {
     RtThread *top[REP_N + 1] = {0};
     uint64_t busy[REP_N + 1] = {0}, all_run = 0, all_core = 0;
     for (RtThread *t = g_all; t; t = t->all) {
-        acct(t, t->st);   // close the open interval
+        sched_acct(t, t->st);   // close the open interval
         uint64_t b = t->st_ns[S_RUN] + t->st_ns[S_CORE] + t->st_ns[S_HOST];
         all_run += t->st_ns[S_RUN];
         all_core += t->st_ns[S_CORE];
@@ -1300,7 +1312,7 @@ static void lock_acquire_for(RtThread *t, uint64_t addr, uint32_t tag) {
         }
         if (cas32(addr, &v, v | WAITERS_BIT)) break;
     }
-    acct(t, S_LOCK);
+    sched_acct(t, S_LOCK);
     t->wobj = v & ~WAITERS_BIT;
     t->wkind = W_LOCK;
     t->waddr = addr;
@@ -1361,7 +1373,7 @@ static void thread_finish(RtThread *t) {
     tcur = NULL;
     lock();
     core_put(t);
-    acct(t, S_OFF);
+    sched_acct(t, S_OFF);
     if (t->hthr) CloseHandle(t->hthr);   // no waiter interrupts a thread without a core
     t->hthr = NULL;
     t->exited = 1;
@@ -1620,7 +1632,7 @@ int kern_svc(Cpu *c, uint32_t imm) {
         if (ns > 0) {
             lock();
             core_put(t);
-            acct(t, S_SLEEP);
+            sched_acct(t, S_SLEEP);
             t->wobj = (uint64_t)ns;
             t->nblk++;
             unlock();

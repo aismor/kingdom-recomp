@@ -8,6 +8,7 @@
 #include "cfg.h"
 #include "host.h"
 #include "input_map.h"
+#include "os.h"
 
 #define STICK_MAX 32767
 #define DIAGONAL 23170   // STICK_MAX / sqrt(2)

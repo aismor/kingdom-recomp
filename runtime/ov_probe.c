@@ -6,7 +6,7 @@
 // (answers from TOTK_SWKBD_ANSWER, then the window pressed by TOTK_SWKBD_TEST) and the shared fonts when
 // tools/extract_fonts.py has written them. The named fatal stubs, and the account UID of a second run, are checked in
 // child processes (this executable again, TOTK_PROBE_SERVICES_CHILD=<case>).
-#include <windows.h>
+#include "os.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>

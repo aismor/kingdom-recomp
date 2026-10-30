@@ -11,7 +11,7 @@
 // - Inputs of at least AWAY_BYTES give the virtual core up while they decode (other guest threads run on it).
 // TOTK_ZSTD_NATIVE=0 keeps the guest decoder (the patch set switch); TOTK_ZSTD_CHECK=1 decodes each call both ways,
 // keeps the guest's result and logs every call where the two differ.
-#include <windows.h>
+#include "os.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>

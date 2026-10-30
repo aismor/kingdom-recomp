@@ -8,6 +8,7 @@
 #include "host.h"
 #include "input.h"
 #include "input_map.h"
+#include "os.h"
 #include "platform/platform.h"
 
 static int fails;

@@ -42,12 +42,13 @@
 // MacNativeGames games/totk/third_party/d2r_gfx/gfx/nvn/nvn_mtl.m pso_key_fill / pso_desc / msl_varyings and its vfmt
 // table @ b75be8cf (MIT, Copyright (c) 2026 jhaizhou); the binding conventions are those of Ryujinx's shader translator
 // (MIT, tools/vendor/ryujinx).
+#ifdef _WIN32
 #include <io.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <windows.h>
-#include <psapi.h>
+#include "os.h"
 
 #include "cfg.h"
 #include "gfx.h"
@@ -1938,7 +1939,11 @@ static void keys_flush(void) {
             ok = fwrite(&h, sizeof h, 1, f) == 1;
         }
         if (ok) ok = fwrite(r, sizeof *r, n, f) == n;
+#if defined(_WIN32)
         if (ok) ok = !fflush(f) && !_commit(_fileno(f));   // appended records on the disk before the next append
+#else
+        if (ok) ok = !fflush(f) && !fsync(fileno(f));
+#endif
         if (f) ok = !fclose(f) && ok;
         if (ok) K.header_ok = 1;
         else rt_log("vk_pipeline: cannot write %s", K.path);

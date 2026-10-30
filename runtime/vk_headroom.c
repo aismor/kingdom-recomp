@@ -14,7 +14,7 @@
 // its VRAM mirror (vk_memory.c), so while use plus two blocks passes 85% of the budget the anchor goes and nothing new
 // is allocated.
 // TOTK_VRAM_HEADROOM=0 turns it off.
-#include <windows.h>
+#include "os.h"
 
 #include "cfg.h"
 #include "host.h"

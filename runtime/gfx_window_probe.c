@@ -3,7 +3,7 @@
 // resizes the window. Run with TOTK_VK_VALIDATION=1 to count validation errors.
 #include <stdio.h>
 #include <string.h>
-#include <windows.h>
+#include "os.h"
 
 #include "gfx.h"
 #include "input.h"

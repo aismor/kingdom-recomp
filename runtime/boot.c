@@ -9,7 +9,7 @@
 //   nvnBootstrapLoader     called from main+0xe7eb2c (1.4.3: +0xbe0360) in the graphics bring-up; logs the run
 //                          statistics, exits 0
 // With --seconds S the run continues past that call; rt_frame_presented ends it once the world clock passed S.
-#include <windows.h>
+#include "os.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -349,6 +349,7 @@ void rt_boot(void) {
     if (warm) WaitForSingleObject(warm, INFINITE), CloseHandle(warm);
     else vk_pipeline_prewarm();
     held = GetTickCount64() - held;
+#ifdef _WIN32
     FILETIME created, x0, x1, x2, now;
     GetProcessTimes(GetCurrentProcess(), &created, &x0, &x1, &x2);
     GetSystemTimeAsFileTime(&now);
@@ -356,6 +357,9 @@ void rt_boot(void) {
                    n = {.LowPart = now.dwLowDateTime, .HighPart = now.dwHighDateTime};
     rt_log("boot: guest starts %llu ms after process start (%llu ms of it waiting for the prewarm)",
            (unsigned long long)((n.QuadPart - c.QuadPart) / 10000), (unsigned long long)held);
+#else
+    rt_log("boot: guest starting (%llu ms waiting for the prewarm)", (unsigned long long)held);
+#endif
     rt_guest_start_ns = kern_now_ns();
     kern_run_on_guest_main(guest_main);
     rt_fatal("boot: the guest main thread ended");

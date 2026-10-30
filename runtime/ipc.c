@@ -4,7 +4,7 @@
 // and the service table. The SDK client code runs unchanged: requests are read from the calling thread's message
 // buffer (TLR, or the user buffer of 0x22) and answered in place. Unknown ports, services and commands stop with their
 // name and id instead of returning a fake success. Also --probe-ipc.
-#include <windows.h>
+#include "os.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

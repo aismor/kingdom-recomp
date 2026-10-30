@@ -8,7 +8,7 @@
 // come back zeroed, so no stale-page bookkeeping is needed. The stack and heap block and the alias region are
 // reserved with MEM_WRITE_WATCH: mem_written_pages reports the pages the CPU wrote, which
 // the Vulkan back end uploads again.
-#include <windows.h>
+#include "os.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

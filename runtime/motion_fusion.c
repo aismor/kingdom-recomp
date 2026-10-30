@@ -9,7 +9,7 @@
 // gravity (Mahony, gain 0.5/s: about 2 s), as the Switch's sensor fusion does; yaw has no reference and drifts with the
 // gyro's bias. The newest MOTION_RING samples are kept; reads are newest first. The feeding thread writes, guest
 // threads read, both under the instance's SRW lock.
-#include <windows.h>
+#include "os.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>

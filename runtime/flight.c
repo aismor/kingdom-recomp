@@ -7,7 +7,7 @@
 //
 // Records come from perf_present (prof_win.c) on the render thread; the counts are differences of the TOTK_TRACE=perf
 // running totals and of vk_exec_frame. Off, the only cost is the flight_on branch in perf_present and vk_backend.c.
-#include <windows.h>
+#include "os.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

@@ -5,7 +5,7 @@
 // service validates every section against the header, keeps server-side voice state, advances it in real time (one
 // frame of sample_count / sample_rate seconds per render tick, signalling the renderer's event) and writes the output
 // status the client expects. The mixer behind it is audio_mixer.c.
-#include <windows.h>
+#include "os.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>

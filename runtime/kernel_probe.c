@@ -3,7 +3,7 @@
 // PLT stub for nn::os::GetSystemTick, through the lifted sdk function, to rt_ticks.
 //
 // Every probe thread is created with SVC 0x08 and drives the kernel through rt_svc, the entry the lifted code uses.
-#include <windows.h>
+#include "os.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

@@ -16,9 +16,7 @@
 // chain where the thread stopped) and, after a present at least <ms> after the previous one, writes
 // that interval's samples (plus the 20 ms before) to <TOTK_PROFILE>.f<frame>: the profile format, one `stack 1` line per
 // sample, and `tstack <tid> <ms into the window> <rip>...` lines that keep the thread and the time. At most 64 dumps.
-#include <windows.h>
-#include <psapi.h>
-#include <tlhelp32.h>
+#include "os.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

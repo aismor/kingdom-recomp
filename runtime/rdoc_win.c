@@ -1,7 +1,7 @@
 // RenderDoc in-app capture (debug tool). TOTK_RDOC=<frame>[,<frame>...] captures those presented frames; TOTK_RDOC_DIR is the
 // output directory (default build/captures); TOTK_RDOC_DLL overrides the renderdoc.dll path. Only the API fields used are declared
 // here (layout of RENDERDOC_API_1_4_1, renderdoc_app.h, MIT), so no RenderDoc header is vendored.
-#include <windows.h>
+#include "os.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

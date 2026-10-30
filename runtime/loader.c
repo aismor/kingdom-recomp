@@ -6,7 +6,7 @@
 //
 // The lifted C was generated from the unrelocated words of .text and .rodata and embeds absolute guest addresses, so
 // each module must sit at its layout base and relocations may only write the data segment.
-#include <windows.h>
+#include "os.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

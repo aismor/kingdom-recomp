@@ -17,11 +17,8 @@
 // Also here: the runtime services the generated code calls besides rt_dispatch and rt_svc (rt_brk, rt_udf,
 // rt_ticks, the function profiler hook), logging, SHA-256, and the crash reporter (a vectored exception handler that
 // names the lifted function, the guest registers and the guest frame-pointer chain).
-#include <windows.h>
-#include <bcrypt.h>
+#include "os.h"
 #include <limits.h>
-#include <psapi.h>
-#include <timeapi.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -148,6 +145,7 @@ static void parse_trace(void) {
 }
 
 void rt_sha256(const void *p, size_t n, uint8_t out[32]) {
+#ifdef _WIN32
     static BCRYPT_ALG_HANDLE alg;
     BCRYPT_ALG_HANDLE a = __atomic_load_n(&alg, __ATOMIC_ACQUIRE);
     if (!a) {
@@ -169,6 +167,7 @@ void rt_sha256(const void *p, size_t n, uint8_t out[32]) {
     }
     if (BCryptFinishHash(h, out, 32, 0)) rt_fatal("SHA-256: BCryptFinishHash failed");
     BCryptDestroyHash(h);
+#endif
 }
 
 // ---- configuration
@@ -487,23 +486,30 @@ static const char *portable_path(const char *dir, const char *var, const char *s
                                  const char *fallback) {
     const char *e = cfg_get(var);
     if (e && *e) {
-        int abs_path = e[0] == '\\' || e[0] == '/' || e[1] == ':';
+        int abs_path = e[0] == '\\' || e[0] == '/' || (e[0] && e[1] == ':');
         if (abs_path) snprintf(out, cap, "%s", e);
-        else snprintf(out, cap, "%s\\%s", dir, e);
+        else snprintf(out, cap, "%s/%s", dir, e);
         return out;
     }
     char probe[MAX_PATH * 3];
-    snprintf(out, cap, "%s\\%s", dir, sub);
-    snprintf(probe, sizeof probe, "%s\\%s", out, must);
-    return GetFileAttributesA(probe) != INVALID_FILE_ATTRIBUTES ? out : fallback;
+    snprintf(out, cap, "%s/%s", dir, sub);
+    snprintf(probe, sizeof probe, "%s/%s", out, must);
+    return plat_file_exists(probe) ? out : fallback;
 }
 
 static void portable_paths(RtConfig *c) {
     char exe[MAX_PATH * 2];
-    DWORD n = GetModuleFileNameA(NULL, exe, sizeof exe);
-    char *cut = n && n < sizeof exe ? strrchr(exe, '\\') : NULL;
+    if (!plat_exe_path(exe, sizeof exe)) return;
+    char *cut = strrchr(exe, '/');
+    char *cut2 = strrchr(exe, '\\');
+    if (cut2 > cut) cut = cut2;
     if (!cut) return;
     *cut = 0;
+    const char sep = '/';
+    char sub_exefs[MAX_PATH * 2], sub_romfs[MAX_PATH * 2], sub_profile[MAX_PATH * 2];
+    snprintf(sub_exefs, sizeof sub_exefs, "%s%cexefs", exe, sep);
+    snprintf(sub_romfs, sizeof sub_romfs, "%s%cromfs", exe, sep);
+    snprintf(sub_profile, sizeof sub_profile, "%s%cprofile", exe, sep);
     c->exefs = portable_path(exe, "TOTK_EXEFS", "exefs", "main.npdm", pp_exefs, sizeof pp_exefs, c->exefs);
     c->romfs = portable_path(exe, "TOTK_ROMFS", "romfs", "romfs.bin", pp_romfs, sizeof pp_romfs, c->romfs);
     c->profile = portable_path(exe, "TOTK_PROFILE_DIR", "profile", ".", pp_profile, sizeof pp_profile, c->profile);

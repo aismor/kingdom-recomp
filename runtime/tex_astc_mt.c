@@ -3,7 +3,7 @@
 // takes part and returns when every row is done. One image at a time: a second caller while the pool is busy, or an
 // image under MT_MIN_BLOCKS, decodes on its own thread.
 #include <string.h>
-#include <windows.h>
+#include "os.h"
 
 #include "host.h"
 #include "tex.h"

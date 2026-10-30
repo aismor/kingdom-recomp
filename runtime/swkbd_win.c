@@ -18,7 +18,7 @@
 //   TOTK_SWKBD_ANSWER=<text>|<cancel>|<initial>   answer without a window (probes, scripted runs); <initial> keeps the
 //                                                 starting text (the game's, else the default name)
 //   TOTK_SWKBD_TEST=ok|cancel                     open the window, then press OK / Cancel on the first timer tick
-#include <windows.h>
+#include "os.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

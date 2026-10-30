@@ -3,8 +3,7 @@
 // The SVC entry of the lifted code: preemption checkpoint, trace, then the thread and
 // synchronization SVCs (kernel.c), IPC (ipc.c), memory (memory.c), Break, OutputDebugString, GetInfo and ExitProcess. The 21 SVCs
 // TotK has but never reaches on MNG's boot path stop with a named fatal, the caller and the guest backtrace.
-#include <windows.h>
-#include <bcrypt.h>
+#include "os.h"
 #include <stdio.h>
 #include <string.h>
 

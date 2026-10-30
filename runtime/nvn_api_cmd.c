@@ -12,7 +12,7 @@
 // recording into host memory; the handle is that copy (a flat OP_BEGIN ... OP_END sequence) and lives until the game
 // adds the same control memory again. CallCommands and CopyCommands inline the called recording, so copies hold no
 // OP_CALL or OP_JUMP.
-#include <windows.h>
+#include "os.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>

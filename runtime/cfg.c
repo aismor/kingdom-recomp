@@ -13,6 +13,7 @@
 
 #include "cfg.h"
 #include "host.h"
+#include "os.h"
 #include "platform/platform.h"
 
 #define PREFIX "TOTK_"

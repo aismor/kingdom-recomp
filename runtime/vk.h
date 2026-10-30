@@ -1,11 +1,25 @@
 // Vulkan-internal header of the graphics layer. Host code only; the guest never sees it.
 #pragma once
+#ifdef _WIN32
 #ifndef VK_USE_PLATFORM_WIN32_KHR
 #define VK_USE_PLATFORM_WIN32_KHR 1
 #endif
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_win32.h>
+#else
+#if defined(__linux__)
+#define VK_USE_PLATFORM_XLIB_KHR
+#include <X11/Xlib.h>
+#endif
+#include <vulkan/vulkan.h>
+#if defined(VK_USE_PLATFORM_XLIB_KHR)
+#include <vulkan/vulkan_xlib.h>
+#endif
+#endif
 #include <stdint.h>
+#if !defined(_WIN32)
+#include "os.h"
+#endif
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wnullability-completeness"
 #include "vk_mem_alloc.h"

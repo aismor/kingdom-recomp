@@ -13,7 +13,7 @@
 // jhaizhou; origin d2r-mobile).
 #include <stdlib.h>
 #include <string.h>
-#include <windows.h>
+#include "os.h"
 
 #include "gfx.h"
 #include "host.h"

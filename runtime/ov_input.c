@@ -6,7 +6,7 @@
 // which is the controller the game reads in that mode. Mouse and keyboard report no input. The controller has two
 // vibration devices (left, right) played on the gamepad's motors (TOTK_RUMBLE=0: none) and a six-axis sensor fed by
 // the gamepad's gyro and accelerometer (TOTK_MOTION=0, live: reads at rest). State layouts follow libnx HID.
-#include <windows.h>
+#include "os.h"
 #include <math.h>
 #include <stdint.h>
 #include <stdlib.h>

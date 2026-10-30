@@ -7,7 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <windows.h>
+#include "os.h"
 #include "host.h"
 #include "nvn_api.h"
 #include "tex.h"

@@ -10,7 +10,7 @@
 #include <immintrin.h>
 #include <stdlib.h>
 #include <string.h>
-#include <windows.h>
+#include "os.h"
 
 #include "host.h"
 #include "vk.h"

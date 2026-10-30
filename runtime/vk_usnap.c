@@ -18,7 +18,7 @@
 // with TOTK_REPLAY_ASYNC. TOTK_UBO_SNAPSHOT=0 binds live memory as before; =ab alternates (TOTK_AB).
 #include <stdlib.h>
 #include <string.h>
-#include <windows.h>
+#include "os.h"
 
 #include "host.h"
 #include "nvn_api.h"

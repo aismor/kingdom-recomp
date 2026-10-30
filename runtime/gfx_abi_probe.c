@@ -5,7 +5,7 @@
 // Needs no game files.
 #include <stddef.h>
 #include <stdio.h>
-#include <windows.h>
+#include "os.h"
 
 #include "gfx.h"
 

@@ -17,7 +17,7 @@
 // by the submission it was handed out for. The game runs at most one frame ahead: queueing present N waits until the
 // replay thread handled present N-1. Calls that read or free GPU state that queued work may use drain the queue first
 // (replay_drain), each cause counted.
-#include <windows.h>
+#include "os.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

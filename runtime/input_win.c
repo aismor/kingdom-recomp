@@ -4,7 +4,7 @@
 // and owns the cursor capture. Keys and their map: docs/controls.md.
 // The gamepad also rumbles (input_rumble) and, when it has a gyro and an accelerometer, feeds the six-axis sensor from a
 // thread of its own (input_motion_start). Every SDL call on the gamepad is made under `lock`.
-#include <windows.h>
+#include "os.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -314,8 +314,10 @@ static float mouse_sens_get(void) {
     return mouse_sens;
 }
 
-// Hide the cursor and confine it to the client area while the window is focused, not suspended, not behind a text entry
-// or the menu, and the mouse camera is on; release it otherwise. Safe from any thread.
+// Hide the cursor and confine it to the client area while the window is focused...
+#ifndef _WIN32
+static void cursor_update(HWND h) { (void)h; }
+#else
 static void cursor_update(HWND h) {
     const char *in = cfg_get("TOTK_INPUT");
     AcquireSRWLockExclusive(&cur_lock);
@@ -334,6 +336,7 @@ static void cursor_update(HWND h) {
     }
     ReleaseSRWLockExclusive(&cur_lock);
 }
+#endif
 
 int input_cursor_released(void) { return (cur_rel & CUR_REL) != 0; }
 
@@ -342,8 +345,16 @@ void input_cursor_suspend(int on) {
     cursor_update(gfx_window_handle());
 }
 
-// Window procedure hook (gfx_window.c calls it first). Returns 1 with *res set when the message is fully handled.
+// Window procedure hook (gfx_window.c / gfx_window_sdl.c).
 int input_window_msg(HWND h, UINT m, WPARAM w, LPARAM l, LRESULT *res) {
+#ifndef _WIN32
+    (void)h;
+    (void)m;
+    (void)w;
+    (void)l;
+    (void)res;
+    return 0;
+#else
     switch (m) {
     case WM_CREATE: {
         RAWINPUTDEVICE rid = {.usUsagePage = 1, .usUsage = 2, .dwFlags = 0, .hwndTarget = h};   // generic mouse
@@ -395,6 +406,7 @@ int input_window_msg(HWND h, UINT m, WPARAM w, LPARAM l, LRESULT *res) {
         break;
     }
     return 0;
+#endif
 }
 
 static int key_down(int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; }

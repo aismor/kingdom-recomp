@@ -63,6 +63,10 @@ from pathlib import Path
 import romfs_index
 from build_shaders import stale as stale_shaders
 from check_content import GENERATED_MARKER
+from host_platform import (
+    EXE_NAME, IS_WINDOWS, default_ar, default_clang, default_ninja, find_tool, linux_link_libs, linux_rt_extra,
+    linux_rt_skip, pkg_config_flags,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 # In a git worktree (tools/worktree.py) build/ and generated/ are junctions into the main checkout, and resolve() follows
@@ -193,9 +197,37 @@ RUNTIME = ROOT / 'runtime'   # --runtime: a copy of runtime/ lets a task build w
 def runtime_sources(skip=()):
     """Every runtime/*.c, *.cpp, platform/*.c, *.rc, the in-game menu (ui/*.cpp) and Dear ImGui except the names in skip,
     so a task adds a file without editing this script."""
-    pats = ('*.c', '*.cpp', 'platform/*.c', '*.rc', 'ui/*.cpp', 'third_party/imgui/*.cpp',
+    pats = ('*.c', '*.cpp', 'platform/*.c', 'ui/*.cpp', 'third_party/imgui/*.cpp',
             'third_party/imgui/backends/*.cpp')
-    return sorted(p for pat in pats for p in RUNTIME.glob(pat) if p.name not in skip)
+    if IS_WINDOWS:
+        pats = ('*.c', '*.cpp', 'platform/*.c', '*.rc', 'ui/*.cpp', 'third_party/imgui/*.cpp',
+                'third_party/imgui/backends/*.cpp')
+    skip = set(skip)
+    if not IS_WINDOWS:
+        skip |= linux_rt_skip()
+        skip.add('win32.c')
+        skip.add('os_linux.c')  # linked explicitly below via glob — actually os_linux is top-level runtime/os_linux.c
+    files = []
+    for pat in pats:
+        for p in RUNTIME.glob(pat):
+            if p.name in skip:
+                continue
+            if not IS_WINDOWS and pat.startswith('platform') and p.name == 'win32.c':
+                continue
+            files.append(p)
+    if not IS_WINDOWS:
+        for name in linux_rt_extra():
+            p = RUNTIME / name
+            if p.is_file() and p not in files:
+                files.append(p)
+        for extra in ('os_linux.c', 'os_fiber_linux.c', 'sha256_portable.c'):
+            p = RUNTIME / extra
+            if p.is_file() and p not in files:
+                files.append(p)
+        plat = RUNTIME / 'platform' / 'linux.c'
+        if plat.is_file() and plat not in files:
+            files.append(plat)
+    return sorted(files)
 
 
 def runtime_object(out, src):
@@ -243,6 +275,19 @@ def port_version():
     return path.read_text(encoding='utf-8').strip() if path.is_file() else 'unknown'
 
 
+def write_runtime_lib_layout_stub(out):
+    """layout.h for --make-runtime-lib when the lifter has not been run (CI prebuild of libtotkrt.a)."""
+    write_if_changed(
+        out / 'layout.h',
+        '// Stub for --make-runtime-lib when generated layout is absent. Not for a full game link.\n'
+        '#pragma once\n\n'
+        '#define MOD_MAIN_BASE 0x7000000000ull\n'
+        '#define MOD_MAIN_SIZE 0x1000ull\n'
+        '#define MOD_COUNT 1\n'
+        '#define MOD_LIST(X) X(main, MAIN)\n',
+    )
+
+
 def ninja_file(gen, out, mods, pool_depth, skip=(), prebuilt=False, runtime_lib=None, make_lib=False):
     """build.ninja text, and the object lists per module. With prebuilt the generated objects already exist in
     out/obj and are link inputs without a compile edge. runtime_lib: a prebuilt library replaces the runtime objects
@@ -250,8 +295,14 @@ def ninja_file(gen, out, mods, pool_depth, skip=(), prebuilt=False, runtime_lib=
     inc = f'-I {cmd_path(RUNTIME)} -I {cmd_path(gen)}'
     vma = f'{cmd_path(DEPS / "include")} -I {cmd_path(DEPS / "include" / "vma")}' if DEPS else cmd_path(VMA_INCLUDE)
     imgui = cmd_path(RUNTIME / 'third_party' / 'imgui')
+    rt_pkg_inc = []
+    if not IS_WINDOWS and not DEPS:
+        inc_flags, _ = pkg_config_flags('sdl3', 'vulkan')
+        rt_pkg_inc = inc_flags
     rt_inc = f'{inc} -I {cmd_path(out)} -I {vma} -I {imgui}'   # romfs_config.h, vk_mem_alloc.h (+ deps headers), imgui.h
-    libs = [f'-L {cmd_path(DEPS / "lib")}'] + LLVM_LINK_LIBS if DEPS else LINK_LIBS
+    if rt_pkg_inc:
+        rt_inc += ' ' + ' '.join(rt_pkg_inc)
+    libs = [f'-L {cmd_path(DEPS / "lib")}'] + LLVM_LINK_LIBS if DEPS else (LINK_LIBS if IS_WINDOWS else linux_link_libs())
     lines = [
         '# Written by tools/build_game.py; do not edit.',
         'ninja_required_version = 1.10',
@@ -307,7 +358,9 @@ def ninja_file(gen, out, mods, pool_depth, skip=(), prebuilt=False, runtime_lib=
         sources += [out / 'modules.c']
     for src in sources:
         o = runtime_object(out, src)
-        if src.suffix == '.rc':   # windres writes no depfile: the files totk.rc embeds are listed by hand
+        if src.suffix == '.rc':
+            if not IS_WINDOWS:
+                continue
             lines.append(f'build {ninja_path(o)}: rc {ninja_path(src)} | {ninja_path(RUNTIME / "totk.manifest")} '
                          f'{ninja_path(RUNTIME / "totk.ico")}')
         else:
@@ -315,7 +368,7 @@ def ninja_file(gen, out, mods, pool_depth, skip=(), prebuilt=False, runtime_lib=
         rt.append(o)
     objs['runtime'] = rt
     every = [o for v in objs.values() for o in v]
-    exe = out / 'totk.exe'
+    exe = out / EXE_NAME
     if make_lib:
         exe = out / LIB_NAME
         lines += ['', 'rule ar', f'  command = {cmd_arg(AR.as_posix())} rcs $out $in', '  description = AR $out', '', f'build {ninja_path(exe)}: ar ' + ' '.join(ninja_path(o) for o in every),
@@ -530,7 +583,12 @@ CREATE_SUSPENDED = 0x4
 
 
 def run_measured(cmd, env):
-    """Run cmd in its own job object. Returns (exit code, seconds, peak bytes of one process, peak bytes of all)."""
+    """Run cmd. Returns (exit code, seconds, peak bytes of one process, peak bytes of all)."""
+    if not IS_WINDOWS:
+        t0 = time.monotonic()
+        proc = subprocess.run(cmd, cwd=ROOT, env=env)
+        dt = time.monotonic() - t0
+        return proc.returncode, dt, 0, 0
     k32 = ctypes.WinDLL('kernel32', use_last_error=True)
     k32.CreateJobObjectW.restype = wt.HANDLE
     k32.CreateJobObjectW.argtypes = [ctypes.c_void_p, wt.LPCWSTR]
@@ -564,6 +622,15 @@ def run_measured(cmd, env):
 
 
 def total_ram():
+    if not IS_WINDOWS:
+        try:
+            with open('/proc/meminfo') as f:
+                for line in f:
+                    if line.startswith('MemTotal:'):
+                        return int(line.split()[1]) * 1024
+        except OSError:
+            pass
+        return 16 * GiB
     class MemStatus(ctypes.Structure):
         _fields_ = [('dwLength', wt.DWORD), ('dwMemoryLoad', wt.DWORD)] + \
                    [(n, ctypes.c_ulonglong) for n in ('total', 'avail', 'tpf', 'apf', 'tv', 'av', 'aev')]
@@ -640,7 +707,27 @@ def main():
             sys.exit(f'no expected hashes known for {args.version}; pass --expected')
         expected = ROOT / 'tools' / 'data' / f'expected-v{DISPLAY_VERSIONS[args.version]}.json'
     hashes = json.loads(Path(expected).read_text())['exefs_sha256']
-    global CLANG, AR, WINDRES, NINJA, TOOLCHAIN_BIN, DEPS
+    global CLANG, AR, WINDRES, NINJA, TOOLCHAIN_BIN, DEPS, VMA_INCLUDE, LINK_LIBS
+    if not IS_WINDOWS and not args.toolchain:
+        nc, nn = default_clang(), default_ninja()
+        if nc:
+            CLANG = nc
+        if nn:
+            NINJA = nn
+        AR = default_ar(CLANG) or find_tool('llvm-ar') or find_tool('ar')
+        WINDRES = Path('/nonexistent')
+        dlls = []
+        LINK_LIBS = linux_link_libs()
+        inc, _ = pkg_config_flags('vulkan-memory-allocator')
+        for flag in inc:
+            if flag.startswith('-I'):
+                VMA_INCLUDE = Path(flag[2:])
+                break
+        else:
+            for cand in (Path('/usr/include/vma'), Path('/usr/local/include/vma')):
+                if (cand / 'vk_mem_alloc.h').is_file():
+                    VMA_INCLUDE = cand
+                    break
     if args.ninja:
         NINJA = args.ninja.resolve()
     elif not NINJA.is_file() and (ROOT / 'bin' / 'ninja.exe').is_file():
@@ -654,27 +741,30 @@ def main():
         DEPS = (args.deps or DEFAULT_DEPS).resolve()
         dlls = sorted((DEPS / 'bin').glob('*.dll'))
     for tool in (CLANG, NINJA):
-        if not tool.is_file():
-            sys.exit(f'{tool} not found: install MSYS2 UCRT64 clang, lld and ninja (docs/building.md)')
-    if not (gen / 'layout.json').is_file():
+        if not tool or not tool.is_file():
+            hint = 'docs/building.md' if IS_WINDOWS else 'install clang and ninja (Fedora: dnf install clang lld ninja SDL3-devel vulkan-devel...)'
+            sys.exit(f'{tool} not found: {hint}')
+    if not (gen / 'layout.json').is_file() and not args.make_runtime_lib:
         sys.exit(f'{gen / "layout.json"} not found: run the generator first')
 
-    layout = read_layout(gen)
-    names = [n for n, _, _ in layout]
-    wanted = args.modules.split(',') if args.modules else names
-    unknown = [m for m in wanted if m not in names]
-    if unknown:
-        sys.exit(f'unknown modules {unknown}; the layout has {names}')
-    linked = [m for m in names if m in wanted]
-    mods = {m: chunk_files(gen, m) for m in linked}
+    layout = read_layout(gen) if (gen / 'layout.json').is_file() else []
+    names = [n for n, _, _ in layout] if layout else []
+    wanted = args.modules.split(',') if args.modules else (names if names else [])
+    if not args.make_runtime_lib:
+        unknown = [m for m in wanted if m not in names]
+        if unknown:
+            sys.exit(f'unknown modules {unknown}; the layout has {names}')
+    linked = [m for m in names if m in wanted] if names else []
+    mods = {} if args.make_runtime_lib else {m: chunk_files(gen, m) for m in linked}
 
     cpus = os.cpu_count() or 1
     budget = min(MEM_BUDGET, int(total_ram() * 0.8))
     jobs = args.jobs or max(1, min(cpus, budget // JOB_MEM))
-    missing = [n for n in names if n not in hashes]
-    if missing:
-        sys.exit(f'{expected}: no exefs_sha256 for {missing}')
-    write_if_changed(out / 'modules.c', module_glue(layout, linked, hashes, paths, args.version))
+    if not args.make_runtime_lib:
+        missing = [n for n in names if n not in hashes]
+        if missing:
+            sys.exit(f'{expected}: no exefs_sha256 for {missing}')
+        write_if_changed(out / 'modules.c', module_glue(layout, linked, hashes, paths, args.version))
     if (paths['romfs'] / 'index.json').is_file():
         count, size, dt = romfs_index.write(paths['romfs'], out)
         print(f'romfs index: {count} files, {mib(size)}, {dt:.1f} s')
@@ -691,7 +781,10 @@ def main():
     main_out = (ROOT / 'build' / args.version).resolve()
     pairs = None
     if args.make_runtime_lib:
-        mods, linked, why = {}, [], ''
+        mods, linked = {}, []
+        why = ''
+        if not (gen / 'layout.h').is_file():
+            write_runtime_lib_layout_stub(out)
     elif args.full_build:
         why = '--full-build'
     elif args.toolchain:
@@ -741,13 +834,16 @@ def main():
     if args.make_runtime_lib:
         print(f'{below_root(exe)}: {mib(exe.stat().st_size)}')
         return
-    for dll in dlls:   # dynamic SDL3 (zlib) and its libiconv (LGPL, unmodified DLL), found next to totk.exe
-        shutil.copy2(dll, exe.parent / dll.name)
-    sections, image = pe_sections(exe)
-    print(f'{below_root(exe)}: file {mib(exe.stat().st_size)}, '
-          f'image {mib(image)}; ' + ', '.join(f'{k} {mib(v)}' for k, v in sections.items() if k.startswith('.') and v))
-    if image > 3 * GiB // 2:
-        print('build_game: warning: image over 1.5 GiB; RIP-relative code reaches only 2 GiB', file=sys.stderr)
+    if IS_WINDOWS:
+        for dll in dlls:   # dynamic SDL3 (zlib) and its libiconv (LGPL, unmodified DLL), found next to totk.exe
+            shutil.copy2(dll, exe.parent / dll.name)
+        sections, image = pe_sections(exe)
+        print(f'{below_root(exe)}: file {mib(exe.stat().st_size)}, '
+              f'image {mib(image)}; ' + ', '.join(f'{k} {mib(v)}' for k, v in sections.items() if k.startswith('.') and v))
+        if image > 3 * GiB // 2:
+            print('build_game: warning: image over 1.5 GiB; RIP-relative code reaches only 2 GiB', file=sys.stderr)
+    else:
+        print(f'{below_root(exe)}: {mib(exe.stat().st_size)}')
 
 
 if __name__ == '__main__':

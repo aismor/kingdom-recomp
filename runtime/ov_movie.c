@@ -23,7 +23,7 @@
 // periods late is dropped if the next one is due too, so the picture keeps time with the movie's sound.
 // TOTK_MOVIE_PACE=0 hands every decoded frame over at the next present; TOTK_MOVIE_HOST=0 leaves every decoder to the
 // library (which aborts at the first movie).
-#include <windows.h>
+#include "os.h"
 #include <emmintrin.h>
 #include <stdint.h>
 #include <stdlib.h>

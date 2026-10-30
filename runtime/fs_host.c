@@ -16,7 +16,7 @@
 // Commit; a crash or an Unmount before Commit leaves the previous committed save. Commit returns at once and the copy
 // runs on a background thread (section "save transactions"); fs_save_flush lets the exit paths wait for it. Paths are
 // UTF-8 and go to the W APIs as UTF-16.
-#include <windows.h>
+#include "os.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

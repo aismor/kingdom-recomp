@@ -3,7 +3,7 @@
 // audren:u, the audio renderer service: RequestUpdate wire formats, the server-side
 // renderer state, and the mixer interface (audio_mixer.c: the real mixer with SDL3 output).
 #pragma once
-#include <windows.h>
+#include "os.h"
 #include <stdint.h>
 
 #include "ipc.h"

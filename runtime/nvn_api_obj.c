@@ -7,7 +7,7 @@
 // Objects are stored in place in the NVN object memory the game provides (nvn_obj.h); every argument is read from the
 // AAPCS64 registers (host.h arg_x / arg_s / arg_p) and every result returned with ret_x. Command-buffer procs are in
 // nvn_api_cmd.c, the TOTK extension procs in nvn_ext.c.
-#include <windows.h>
+#include "os.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>

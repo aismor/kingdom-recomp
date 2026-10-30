@@ -13,8 +13,7 @@
 //                                      window opens without taking focus (gfx_window.c), for scripted runs
 //   TOTK_SHARED_FONTS=<dir>            nn::pl shared fonts (tools/extract_fonts.py output), default
 //                                      <romfs>/../../firmware/shared-fonts
-#include <windows.h>
-#include <bcrypt.h>
+#include "os.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
