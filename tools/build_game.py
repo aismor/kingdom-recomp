@@ -294,14 +294,17 @@ def port_version():
 
 
 def write_runtime_lib_layout_stub(out):
-    """layout.h for --make-runtime-lib when the lifter has not been run (CI prebuild of libtotkrt.a)."""
+    """layout.h for --make-runtime-lib when the lifter has not been run (CI prebuild of libtotkrt.a). The library
+    reads MOD_MAIN_BASE (fixed by recomp/layout.py) and MOD_COUNT, which sizes the loader's and memory's module
+    tables: the stub gives the most modules recomp/layout.py ORDER allows (main, subsdk0..9, sdk), so the library
+    loads any real layout (ldr_load refuses one with more modules than MOD_COUNT)."""
     write_if_changed(
         out / 'layout.h',
         '// Stub for --make-runtime-lib when generated layout is absent. Not for a full game link.\n'
         '#pragma once\n\n'
         '#define MOD_MAIN_BASE 0x7000000000ull\n'
         '#define MOD_MAIN_SIZE 0x1000ull\n'
-        '#define MOD_COUNT 1\n'
+        '#define MOD_COUNT 12\n'
         '#define MOD_LIST(X) X(main, MAIN)\n',
     )
 

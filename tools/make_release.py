@@ -333,8 +333,8 @@ def collect_licenses(out):
 
 def runtime_gen():
     """The generated C the runtime library builds against: generated/v121, else v143, else none (a CI runner without
-    the game). The library reads only what every layout.h shares (MOD_MAIN_BASE in runtime/frame_rate.c), which
-    build_game.py's stub layout.h (write_runtime_lib_layout_stub) carries too."""
+    the game). The library reads MOD_MAIN_BASE, which every layout.h shares, and MOD_COUNT, a table capacity:
+    build_game.py's stub layout.h (write_runtime_lib_layout_stub) gives the same base and the largest count."""
     for version in ('v121', 'v143'):
         if (MAIN_ROOT / 'generated' / version / 'layout.json').is_file():
             return MAIN_ROOT / 'generated' / version
