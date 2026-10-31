@@ -10,13 +10,22 @@
 #include "launcher_text.h"
 
 #define LANGID_RUSSIAN 0x19
+#define LANGID_PORTUGUESE 0x16
 #define PATH_CHARS (MAX_PATH * 2)
 
 static void fail(void)
 {
-    int russian = (GetUserDefaultUILanguage() & 0x3ff) == LANGID_RUSSIAN;
-    MessageBoxW(NULL, russian ? LAUNCHER_PYTHON_MISSING_RU : LAUNCHER_PYTHON_MISSING_EN,
-                russian ? LAUNCHER_TITLE_RU : LAUNCHER_TITLE_EN, MB_OK | MB_ICONERROR);
+    int lang = GetUserDefaultUILanguage() & 0x3ff;
+    const wchar_t *msg = LAUNCHER_PYTHON_MISSING_EN;
+    const wchar_t *title = LAUNCHER_TITLE_EN;
+    if (lang == LANGID_RUSSIAN) {
+        msg = LAUNCHER_PYTHON_MISSING_RU;
+        title = LAUNCHER_TITLE_RU;
+    } else if (lang == LANGID_PORTUGUESE) {
+        msg = LAUNCHER_PYTHON_MISSING_PT;
+        title = LAUNCHER_TITLE_PT;
+    }
+    MessageBoxW(NULL, msg, title, MB_OK | MB_ICONERROR);
 }
 
 int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPSTR command_line, int show)

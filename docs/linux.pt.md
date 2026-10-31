@@ -22,6 +22,20 @@ Para a arquitetura do projeto, veja [architecture.md](architecture.md). O fluxo 
 
 Opcional: [uv](https://docs.astral.sh/uv/) para criar os ambientes Python (como no [building.md](building.md)).
 
+## Idioma português (Brasil)
+
+**Instalador e menu do Recomp:** com o sistema em português (ou `LANG=pt_BR.UTF-8`), a janela do instalador abre em português. No menu do jogo (F1), em **Menu → Idioma do menu**, dá para fixar português ou deixar **Automático (do sistema)**.
+
+**Legendas e texto do jogo (localização oficial):** na instalação, escolha **Português (Brasil)** como idioma do jogo. O instalador grava `lang = pt-BR` no `totk.ini` e o jogo lê os arquivos de idioma do RomFS que **vieram da sua extração** (base + atualização). Isso cobre interface, diálogos escritos e legendas em português; a **voz** continua a da localização original da Nintendo (não há dublagem pt-BR oficial completa como nos mods comunitários). Use uma atualização que traga o pacote pt-BR no RomFS (em geral **1.4.3**; na **1.2.1** o suporte pode ser inexistente ou incompleto — se o texto continuar em inglês, confira a versão da sua cópia).
+
+Depois da instalação, confira em `totk.ini`:
+
+```ini
+lang = pt-BR
+```
+
+Ou no menu **Jogo → Idioma do jogo → Português (Brasil)** (reinício pode ser necessário).
+
 ## AppImage (release)
 
 A página de [releases](https://github.com/aismor/kingdom-recomp/releases) traz `Kingdom-Setup-<versão>-x86_64.AppImage`: a mesma janela do instalador, com Python, LLVM e a sysroot do Steam Runtime dentro, sem podman nem pacotes de desenvolvimento. O sistema precisa de glibc 2.34 ou mais nova (Fedora 35+, Ubuntu 22.04+, Debian 12, SteamOS 3) e de um driver com Vulkan 1.3.

@@ -73,9 +73,11 @@ static const char *switch_language(const char *tag) {
         p += k;
     }
     if (!strcmp(lang, "ja") || !strcmp(lang, "de") || !strcmp(lang, "it") || !strcmp(lang, "nl") ||
-        !strcmp(lang, "ru") || !strcmp(lang, "ko") || !strcmp(lang, "pt"))
+        !strcmp(lang, "ru") || !strcmp(lang, "ko"))
         return !strcmp(lang, "ja") ? "ja" : !strcmp(lang, "de") ? "de" : !strcmp(lang, "it") ? "it"
-             : !strcmp(lang, "nl") ? "nl" : !strcmp(lang, "ru") ? "ru" : !strcmp(lang, "ko") ? "ko" : "pt";
+             : !strcmp(lang, "nl") ? "nl" : !strcmp(lang, "ru") ? "ru" : "ko";
+    if (!strcmp(lang, "pt"))
+        return !strcmp(region, "PT") ? "pt" : "pt-BR";   // TotK ships pt-BR; European pt is not a separate pack
     if (!strcmp(lang, "fr")) return !strcmp(region, "CA") ? "fr-CA" : "fr";
     if (!strcmp(lang, "es")) return *region && strcmp(region, "ES") ? "es-419" : "es";
     if (!strcmp(lang, "zh"))
@@ -94,7 +96,10 @@ const char *ov_language(void) {
     const char *code = cfg_get("TOTK_LANG");   // no fixed default: TOTK_LOCALE or the Windows user locale decides when unset
     if (code && *code) {
         for (size_t i = 0; i < sizeof codes / sizeof *codes; i++)
-            if (!strcmp(code, codes[i])) return codes[i];
+            if (!strcmp(code, codes[i])) {
+                if (!strcmp(code, "pt")) return "pt-BR";
+                return codes[i];
+            }
         rt_fatal("TOTK_LANG '%s' is not a Switch language code", code);
     }
     const char *tag = cfg_get("TOTK_LOCALE");

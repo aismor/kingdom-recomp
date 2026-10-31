@@ -5,7 +5,7 @@ install folder, runs `python -m installer ...` as a subprocess and shows its JSO
 this file only draws. The window text is in installer/text/<en|ru>.json under "ui.*" and "launcher.*" ids.
 
     --selftest [--shots DIR]   build every screen in both languages and close by itself (PNG per screen with --shots)
-    --lang en|ru               window language (default: the Windows display language)
+    --lang en|ru|pt               window language (default: system UI language)
 """
 import argparse
 import json
