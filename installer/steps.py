@@ -7,8 +7,8 @@ here: the host check is a small C program built with the bundled clang (hostchec
 
 Install folder: exefs/, romfs/ (romfs.bin, index.json), profile/, totk.exe and its DLLs, romfs-index.bin,
 romfs-patches/, totk_xlate.exe, the shader state of totk.exe --prepare-shaders, totk.ini, totk-install.json.
-Temp folder (<temp>/<dest name>-<hash>): check/ (ExeFS of both inputs, the host check), gen/ (C), build/ (objects),
-logs/ (kept by the cleanup).
+Temp folder (<temp>/<dest name>-<hash>): check/ (ExeFS of both inputs, the host check), split/ (the base game and the
+update of a combined XCI as two NSPs), gen/ (C), build/ (objects), logs/ (kept by the cleanup).
 """
 import hashlib
 import json
@@ -36,6 +36,8 @@ DEST_EXTRA = 4 * GiB      # beside the RomFS: shader and pipeline caches (about 
 TEMP_NEED = 3 * GiB       # generated C (about 0.9 GB) and objects
 HOSTCHECK = Path(__file__).resolve().parent / 'hostcheck.c'
 STAMP = '.install-key'
+HOST_CHECKED = 'KINGDOM_HOST_CHECKED'      # set by kingdom-setup.sh: the host check already passed
+PENDING_SHADERS = 'KINGDOM_PENDING_SHADERS'  # set by kingdom-setup.sh: file listing installs whose shaders it prepares
 
 
 # ---- helpers
@@ -148,6 +150,19 @@ def expected_update(ctx):
     return extract.load_expected()[game_version(ctx)]
 
 
+def given_files(ctx):
+    """(base, update) as the player named them; no update: the base file, a game card image that holds both."""
+    o = ctx.options
+    base = Path(o.base) if o.base else None
+    update = Path(o.update) if o.update else base
+    return base, update
+
+
+def game_files(ctx):
+    """(base, update) the extraction reads: the halves of a combined XCI once the check split it, else given_files."""
+    return getattr(ctx, 'split', None) or given_files(ctx)
+
+
 def shader_list_text(layout):
     if layout.shader_list:
         return layout.shader_list.read_text(encoding='utf-8')
@@ -217,17 +232,30 @@ class Check(Step):
         self.host(ctx)
         rep.progress('check', 'verify', force=True)
         ctx.verify_kept('check')
-        ncas = 0
+        ncas = split = 0
+        parts = None
         if ctx.will_run('extract'):
+            parts = self.combined(ctx)
+            if parts:
+                split = ncas = sum(size for half in parts for _, _, size in half)
+            else:
+                rep.progress('check', 'inputs', force=True)
+                ncas = self.inputs(ctx)
+        self.space(ctx, ncas, split)
+        if parts:
+            self.split(ctx, parts)
             rep.progress('check', 'inputs', force=True)
-            ncas = self.inputs(ctx)
-        self.space(ctx, ncas)
+            self.inputs(ctx)
         if ctx.will_run('extract'):
             rep.progress('check', 'versions', force=True)
             self.versions(ctx)
         return {}
 
     def host(self, ctx):
+        if os.environ.get(HOST_CHECKED) == '1':
+            # The container of kingdom-setup.sh sees no GPU; the script ran this probe on the host before.
+            ctx.reporter.log('host: checked by kingdom-setup.sh on the host')
+            return
         layout, work = ctx.layout, ctx.temp / 'check'
         work.mkdir(parents=True, exist_ok=True)
         exe = work / ('hostcheck' + EXE)
@@ -256,15 +284,51 @@ class Check(Step):
                                devices=', '.join(f'{d["name"]} ({d["api"][0]}.{d["api"][1]})' for d in devices))
         ctx.host = host
 
+    @staticmethod
+    def combined(ctx):
+        """combined_xci_parts of the base file when no separate update was given (or the same file twice), else None.
+        Problems opening it are left to inputs(), which names them."""
+        o = ctx.options
+        base, update = given_files(ctx)
+        if not base or not o.keys or base != update or not base.is_file() or not Path(o.keys).is_file():
+            return None
+        try:
+            return extract.combined_xci_parts(base, Path(o.keys))
+        except (ValueError, OSError, UnicodeDecodeError):
+            return None
+
+    @staticmethod
+    def split(ctx, parts):
+        """The base game and the update of a combined XCI as two NSPs in <temp>/split, kept while the image is
+        unchanged (a resumed install splits it once)."""
+        xci = given_files(ctx)[0]
+        out = ctx.temp / 'split'
+        st = xci.stat()
+        stamp, tag = out / STAMP, f'{xci} {st.st_size} {st.st_mtime_ns}'
+        halves = (out / 'base.nsp', out / 'update.nsp')
+        if not (stamp.is_file() and stamp.read_text().strip() == tag and all(p.is_file() for p in halves)):
+            remove(out)
+            rep = ctx.reporter
+            try:
+                extract.split_combined_xci(xci, parts, out,
+                                           lambda d, t: rep.progress('check', 'split', d, t, 'bytes'))
+            except ValueError as e:
+                raise_if_damaged(e, 'base', xci)
+                raise InstallError('check.file_unreadable', input='base', detail=str(e)) from None
+            stamp.write_text(tag + '\n')
+        ctx.split = halves
+
     def inputs(self, ctx):
         """Open both files with the keys as the extraction will. Returns the bytes of both Program NCAs."""
         o = ctx.options
-        for name in ('base', 'update', 'keys'):
-            path = getattr(o, name)
+        base, update = game_files(ctx)
+        for name, path in (('base', base), ('update', update), ('keys', o.keys)):
             if not path:
                 raise InstallError('check.inputs_needed')
             if not Path(path).is_file():
                 raise InstallError('check.input_missing', input=name, path=str(path))
+        if base == update:   # one file that is no combined XCI: the update is missing
+            raise InstallError('check.inputs_needed')
         try:
             keys = load_keys(Path(o.keys))
         except (ValueError, OSError, UnicodeDecodeError):
@@ -272,8 +336,7 @@ class Check(Step):
         if 'header_key' not in keys:
             raise InstallError('check.keys_no_header_key')
         total = 0
-        for name, is_update in (('base', False), ('update', True)):
-            path = Path(getattr(o, name))
+        for name, path, is_update in (('base', base, False), ('update', update, True)):
             with path.open('rb') as f:
                 total += self.open_input(f, path, keys, name, is_update)
         del keys
@@ -317,8 +380,9 @@ class Check(Step):
                                generation=max(header[0x206], header[0x220])) from None
         return record['size']
 
-    def space(self, ctx, ncas):
-        dest_need = temp_need = 0
+    def space(self, ctx, ncas, split=0):
+        """split: bytes of the two NSPs a combined XCI is split into in the temp folder."""
+        dest_need, temp_need = 0, split
         if ctx.will_run('extract'):
             # the update is identified after this estimate: the larger RomFS of the supported ones
             dest_need += max(extract.load_expected()[v]['romfs']['size'] for v in SUPPORTED) + ncas
@@ -349,11 +413,12 @@ class Check(Step):
         logs = ctx.temp / 'logs'
         logs.mkdir(parents=True, exist_ok=True)
         versions = extract.load_expected()
+        files = dict(zip(('base', 'update'), game_files(ctx)))
         for name, is_update in (('base', False), ('update', True)):
             out = work / name
             remove(out)
             try:
-                extract.extract_exefs(Path(getattr(o, name)), Path(o.keys), out, logs, update=is_update)
+                extract.extract_exefs(files[name], Path(o.keys), out, logs, update=is_update)
             except extract.DamagedFile as e:
                 raise InstallError('check.input_damaged', input=name, path=str(e.path), detail=e.detail) from None
             except ValueError:
@@ -387,8 +452,8 @@ class Extract(Step):
 
     def current(self, ctx, record):
         # Another update file than the recorded one (1.2.1 -> 1.4.3) extracts again; the check then identifies it.
-        update, known = getattr(ctx.options, 'update', None), ctx.state['inputs'].get('update')
-        if update and known and Path(update).is_file():
+        update, known = given_files(ctx)[1], ctx.state['inputs'].get('update')
+        if update and known and update.is_file():
             st = Path(update).stat()
             if (st.st_size, st.st_mtime_ns) != (known.get('size'), known.get('mtime_ns')) \
                     and file_sha256(Path(update)) != known.get('sha256'):
@@ -409,16 +474,21 @@ class Extract(Step):
     def run(self, ctx):
         o, dest, rep = ctx.options, ctx.dest, ctx.reporter
         expected = expected_update(ctx)
-        base, update, keys = Path(o.base), Path(o.update), Path(o.keys)
+        keys = Path(o.keys)
         inputs = {}
-        for name, path in (('base', base), ('update', update)):
+        # The files as given are recorded (a combined XCI under both names, hashed once); the halves are read.
+        for name, path in zip(('base', 'update'), given_files(ctx)):
             known = ctx.state['inputs'].get(name, {})
             st = path.stat()
             if known.get('size') == st.st_size and known.get('mtime_ns') == st.st_mtime_ns and known.get('sha256'):
                 inputs[name] = known
                 continue
+            if name == 'update' and path == given_files(ctx)[0]:
+                inputs[name] = inputs['base']
+                continue
             digest = file_sha256(path, lambda d, t, n=name: rep.progress('extract', 'hash_' + n, d, t, 'bytes'))
             inputs[name] = {'name': path.name, 'size': st.st_size, 'mtime_ns': st.st_mtime_ns, 'sha256': digest}
+        base, update = game_files(ctx)
         ctx.state['inputs'] = inputs
         ctx.save()
 
@@ -532,8 +602,10 @@ class Compile(Step):
         layout = ctx.layout
         clang = subprocess.run([str(layout.clang), '--version'], capture_output=True, text=True).stdout
         tools = [layout.tools / n for n in ('build_game.py', 'romfs_index.py', 'check_content.py')]
-        return fingerprint('compile-1', ctx.keys['lift'], layout.runtime, layout.runtime_lib, layout.deps, *tools,
-                           clang, *[d.name for d in layout.dlls])
+        # On Linux deps is /usr: its path stands for the libraries of the container image, not its whole tree.
+        deps = layout.deps if os.name == 'nt' else str(layout.deps)
+        return fingerprint('compile-1', ctx.keys['lift'], layout.runtime, layout.runtime_lib or 'no-runtime-lib', deps,
+                           *tools, clang, *[d.name for d in layout.dlls])
 
     def current(self, ctx, record):
         exe = ctx.dest / ('totk' + EXE)
@@ -557,9 +629,12 @@ class Compile(Step):
                 rep.progress('compile', 'link', force=True)
 
         rep.progress('compile', 'compile', force=True)
+        # Linux: build_game.py takes clang, the libraries and VMA from the system and compiles runtime/.
+        toolchain = ['--toolchain', layout.llvm, '--deps', layout.deps] if os.name == 'nt' else []
+        runtime_lib = ['--runtime-lib', layout.runtime_lib] if layout.runtime_lib else []
         code, log = run_tool(ctx, 'compile', layout.tools / 'build_game.py', [
-            '--gen', ctx.temp / 'gen', '--out', build, '--toolchain', layout.llvm, '--deps', layout.deps,
-            '--runtime', layout.runtime, '--runtime-lib', layout.runtime_lib, '--ninja', layout.ninja,
+            '--gen', ctx.temp / 'gen', '--out', build, *toolchain,
+            '--runtime', layout.runtime, *runtime_lib, '--ninja', layout.ninja,
             '--version', version_tag(game_version(ctx)), '--expected', layout.expected(game_version(ctx)),
             '--exefs', dest / 'exefs', '--romfs', dest / 'romfs',
             '--profile', dest / 'profile'], parse)
@@ -590,10 +665,16 @@ class Prepare(Step):
         tools = [layout.tools / n for n in ('prepare_shaders.py', 'shader_census.py', 'make_romfs_patches.py')]
         return fingerprint('prepare-1', ctx.keys['compile'], layout.xlate, xlate_id, shader_list_text(layout), *tools)
 
+    @staticmethod
+    def done_file():
+        """What the seed step leaves: the translation (totk --prepare-shaders) needs the GPU, which the container of
+        kingdom-setup.sh lacks, so there it writes the seed files and the script translates on the host."""
+        return 'seed-answers.bin' if os.environ.get(PENDING_SHADERS) else 'shader-prepared.bin'
+
     def current(self, ctx, record):
         dest = ctx.dest
         xlate = dest / ctx.layout.xlate.name
-        return ((dest / 'shader-prepared.bin').is_file() and (dest / 'romfs-patches' / 'manifest.tsv').is_file()
+        return ((dest / self.done_file()).is_file() and (dest / 'romfs-patches' / 'manifest.tsv').is_file()
                 and xlate.is_file() and file_sha256(xlate) == record.get('xlate_sha256'))
 
     def run(self, ctx):
@@ -633,11 +714,16 @@ class Prepare(Step):
                 rep.progress('prepare', 'libraries', force=True)
 
         rep.progress('prepare', 'seed', force=True)
+        pending = os.environ.get(PENDING_SHADERS)
         code, log = run_tool(ctx, 'prepare', layout.tools / 'prepare_shaders.py',
                              [dest, '--version', version_tag(game_version(ctx)), '--romfs', dest / 'romfs', '--exefs',
-                              dest / 'exefs', '--list', shader_list], parse)
-        if code or not (dest / 'shader-prepared.bin').is_file():
+                              dest / 'exefs', '--list', shader_list, *(['--no-run'] if pending else [])], parse)
+        if code or not (dest / self.done_file()).is_file():
             raise InstallError('prepare.shaders_failed', code=code, log=str(log))
+        if pending:
+            remove(dest / 'shader-prepared.bin')   # older than these seeds: the host translates them again
+            with open(pending, 'a', encoding='utf-8') as f:
+                f.write(f'{dest}\n')
         return {'xlate_sha256': file_sha256(xlate)}
 
 
@@ -659,7 +745,7 @@ class Cleanup(Step):
         rep.progress('cleanup', 'temp', force=True)
         for stale in dest.glob('update-merge-*'):
             remove(stale)
-        for name in ('gen', 'build', 'check', 'shader_list.tsv'):
+        for name in ('gen', 'build', 'check', 'split', 'shader_list.tsv'):
             remove(ctx.temp / name)
         return {}
 

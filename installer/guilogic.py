@@ -5,12 +5,14 @@ gui.py draws; everything it decides lives here so tests/installer_gui_test.py ru
     Catalog      text of an id in the window language (installer/text/<lang>.json), English when that lacks it
     Form         what the player entered; command() and problems() build and check the CLI call
     Model        folds the CLI's JSON events (events.py) into step states, progress, space, errors and the result
-    Process      runs `python -m installer ...`, cancels it with Ctrl+Break and feeds lines to a queue
+    Process      runs `python -m installer ...`, cancels it (Ctrl+Break on Windows, SIGTERM elsewhere) and feeds
+                 lines to a queue
 """
 import ctypes
 import json
 import os
 import queue
+import signal
 import subprocess
 import sys
 import threading
@@ -20,7 +22,7 @@ from pathlib import Path
 
 from . import ini
 from . import state as statefile
-from .events import render
+from .events import for_platform, render
 
 TEXT = Path(__file__).resolve().parent / 'text'
 UI_LANGUAGES = ('en', 'ru')
@@ -32,7 +34,7 @@ LANG_RU = 0x19   # primary language id of Russian in a Windows LANGID
 
 def load_texts(lang):
     path = TEXT / f'{lang}.json'
-    return json.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
+    return for_platform(json.loads(path.read_text(encoding='utf-8'))) if path.is_file() else {}
 
 
 class Catalog:
@@ -75,7 +77,11 @@ def flat(value):
 
 
 def windows_ui_language():
-    """'ru' when the Windows display language is Russian, else 'en'."""
+    """'ru' when the Windows display language is Russian, else 'en'. Elsewhere the locale of LC_ALL, LC_MESSAGES or LANG
+    decides the same way."""
+    if os.name != 'nt':
+        locale = os.environ.get('LC_ALL') or os.environ.get('LC_MESSAGES') or os.environ.get('LANG') or ''
+        return 'ru' if locale.startswith('ru') else 'en'
     try:
         langid = ctypes.windll.kernel32.GetUserDefaultUILanguage()
     except (AttributeError, OSError):
@@ -130,10 +136,13 @@ class Form:
         if not self.dest.strip():
             found.append('ui.need_dest')
         if not update:
+            # A game card image may hold the update too; the CLI says so when this one does not.
+            combined = self.base.strip().lower().endswith('.xci')
             for name in ('base', 'update', 'keys'):
                 value = getattr(self, name).strip()
                 if not value:
-                    found.append(f'ui.need_{name}')
+                    if not (name == 'update' and combined):
+                        found.append(f'ui.need_{name}')
                 elif not Path(value).is_file():
                     found.append(f'ui.missing_{name}')
             if self.lang not in ini.LANGUAGES:
@@ -332,10 +341,14 @@ class Process:
         self.command = command
         self.helper_python = helper_python
         self.lines = queue.Queue()
-        flags = (CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW) if creationflags is None else creationflags
         env = dict(os.environ, PYTHONIOENCODING='utf-8', PYTHONUTF8='1', PYTHONUNBUFFERED='1')
+        if os.name == 'nt':
+            flags = (CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW) if creationflags is None else creationflags
+            group = {'creationflags': flags}
+        else:
+            group = {'start_new_session': True}   # its own process group, which cancel() signals
         self.proc = subprocess.Popen(command, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                     stderr=subprocess.STDOUT, creationflags=flags)
+                                     stderr=subprocess.STDOUT, **group)
         self.cancelled_at = None
         self.reader = threading.Thread(target=self.read, daemon=True)
         self.reader.start()
@@ -348,7 +361,14 @@ class Process:
     def cancel(self):
         if self.cancelled_at is None and self.proc.poll() is None:
             self.cancelled_at = time.monotonic()
-            send_break(self.proc, self.helper_python)
+            if os.name == 'nt':
+                send_break(self.proc, self.helper_python)
+            else:
+                # SIGTERM to the group: the CLI records the cancel (installer/cli.py), its tools end with it.
+                try:
+                    os.killpg(self.proc.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
 
     def poll(self):
         code = self.proc.poll()

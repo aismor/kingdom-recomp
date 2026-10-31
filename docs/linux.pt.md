@@ -22,6 +22,24 @@ Para a arquitetura do projeto, veja [architecture.md](architecture.md). O fluxo 
 
 Opcional: [uv](https://docs.astral.sh/uv/) para criar os ambientes Python (como no [building.md](building.md)).
 
+## Instalador (caminho fácil)
+
+O `kingdom-setup.sh` abre a mesma janela do `TotK-Setup.exe` do Windows: você escolhe o jogo base, a atualização, o `prod.keys`, o idioma e a pasta de instalação, e ele extrai, gera o C, compila e prepara os shaders. Toda a toolchain (clang, Python 3.14, .NET 10, VMA) fica num container podman (`tools/linux/Containerfile`); o sistema precisa só de:
+
+- **podman**;
+- driver de vídeo com Vulkan 1.3;
+- as bibliotecas que o jogo usa: `sudo dnf install SDL3 libvpx opus libzstd` (Fedora) ou `sudo apt install libsdl3-0 libvpx9 libopus0 libzstd1` (Ubuntu/Debian).
+
+```bash
+git clone https://github.com/aismor/kingdom-recomp.git
+cd kingdom-recomp
+./kingdom-setup.sh
+```
+
+Na primeira execução o script monta a imagem do container, o `hactool`, o tradutor de shaders e a lista de shaders (alguns minutos, com internet). A verificação de CPU e Vulkan e a tradução dos shaders (`totk --prepare-shaders`) rodam no sistema, fora do container, porque precisam da GPU: a tradução acontece depois que você fecha a janela. Os arquivos do jogo e a pasta de instalação precisam estar na sua home, em `/run/media`, `/media` ou `/mnt`, que são as pastas que o container enxerga.
+
+Para jogar: `cd <pasta de instalação> && ./totk`. Os passos abaixo são o caminho manual, para desenvolvimento.
+
 ## 1. Clonar o repositório
 
 ```bash

@@ -41,7 +41,8 @@ def cancel(signum, frame):
 def main(argv=None):
     ap = Parser(prog='python -m installer', description=__doc__.splitlines()[0])
     ap.add_argument('--base', type=Path, help='base game, XCI or NSP')
-    ap.add_argument('--update', type=Path, help='1.2.1 or 1.4.3 update NSP')
+    ap.add_argument('--update', type=Path, help='1.2.1 or 1.4.3 update NSP (not needed when --base is an XCI that '
+                                                'holds the update)')
     ap.add_argument('--keys', type=Path, help='prod.keys')
     ap.add_argument('--lang', help='game language, a Switch language code (en-US, en-GB, ja, de, ru, ...)')
     ap.add_argument('--dest', type=Path, required=True, help='install folder')

@@ -20,8 +20,13 @@ Python the release ships, with the same packages), else this Python; toolchain/l
 runtime/ as the sources with build/install-rtlib/libtotkrt.a (tools/build_game.py --make-runtime-lib --out
 build/install-rtlib); MSYS2 UCRT64 ninja.exe; toolchain/hactool; build/xlate/totk_xlate.exe; the shader list from
 refs/MacNativeGames; build/install-temp. The version is VERSION with -dev and the commit: 0.1.0-dev+973c626.
+
+Dev mode on Linux (the container of kingdom-setup.sh, tools/linux/Containerfile): clang, ninja and the libraries of
+the system (/usr), no runtime library (build_game.py compiles runtime/), no DLLs, toolchain/hactool/hactool,
+build/xlate/totk_xlate.exe and build/shader_list.tsv, which kingdom-setup.sh writes.
 """
 import os
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -48,7 +53,7 @@ class Layout:
     llvm: Path            # llvm-mingw tree
     deps: Path            # include/ and lib/ for the link
     runtime: Path         # runtime headers and install-side sources
-    runtime_lib: Path     # libtotkrt.a
+    runtime_lib: Path | None   # libtotkrt.a; None: build_game.py compiles runtime/ (Linux)
     ninja: Path
     hactool: Path
     xlate: Path           # totk_xlate.exe; a totk_xlate.id beside it is copied too
@@ -73,8 +78,10 @@ class Layout:
         """Paths the steps need that do not exist."""
         need = [self.python, self.tools / 'extract.py', self.tools / 'build_game.py', self.tools / 'prepare_shaders.py',
                 self.tools / 'make_romfs_patches.py', self.recomp / 'gen.py', self.clang,
-                self.deps / 'include', self.deps / 'lib', self.runtime, self.runtime_lib, self.ninja, self.hactool,
+                self.deps / 'include', self.deps / 'lib', self.runtime, self.ninja, self.hactool,
                 self.xlate, *self.dlls, *(f(v) for v in SUPPORTED for f in (self.patches, self.expected))]
+        if self.runtime_lib:
+            need.append(self.runtime_lib)
         if self.shader_list:
             need.append(self.shader_list)
         return [str(p) for p in need if not p.exists()]
@@ -99,13 +106,27 @@ def release_layout(root):
         shader_list=root / 'data' / 'shader_list.tsv', ini_example=root / 'totk.ini.example', temp=root / 'temp')
 
 
+def linux_dev_layout(root, release):
+    ninja = shutil.which('ninja') or shutil.which('ninja-build') or '/usr/bin/ninja'
+    return Layout(
+        root=root, dev=True, release=release, python=Path(sys.executable),
+        tools=root / 'tools', recomp=root / 'recomp',
+        llvm=Path('/usr'), deps=Path('/usr'), runtime=root / 'runtime', runtime_lib=None,
+        ninja=Path(ninja), hactool=root / 'toolchain' / 'hactool' / 'hactool',
+        xlate=root / 'build' / 'xlate' / 'totk_xlate.exe',
+        shader_list=root / 'build' / 'shader_list.tsv', ini_example=root / 'totk.ini.example',
+        temp=root / 'build' / 'install-temp')
+
+
 def dev_layout(root):
     commit = subprocess.run(['git', '-C', str(root), 'rev-parse', '--short', 'HEAD'], capture_output=True,
                             text=True).stdout.strip()
+    semver = (root / 'VERSION').read_text(encoding='utf-8').strip()
+    if os.name != 'nt':
+        return linux_dev_layout(root, f'{semver}-dev+{commit or "unknown"}')
     embed = root / 'build' / 'py314-embed' / 'py' / ('python' + EXE)
     trees = sorted(p.parent.parent for p in (root / 'toolchain').glob('llvm-mingw-*/llvm-mingw-*/bin/clang' + EXE))
     deps = root / 'toolchain' / 'deps-mingw'
-    semver = (root / 'VERSION').read_text(encoding='utf-8').strip()
     return Layout(
         root=root, dev=True, release=f'{semver}-dev+{commit or "unknown"}',
         python=embed if embed.is_file() else Path(sys.executable),

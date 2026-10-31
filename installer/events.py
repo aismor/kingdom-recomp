@@ -15,6 +15,7 @@ Text is never the payload: ids name a step ("step.<id>"), a phase ("phase.<step>
 and installer/text/en.json holds their English text with {param} placeholders. The log renders events with it.
 """
 import json
+import os
 import sys
 import threading
 import time
@@ -24,8 +25,15 @@ CATALOG = Path(__file__).resolve().parent / 'text' / 'en.json'
 PROGRESS_EVERY = 0.5   # seconds between two progress events of one phase
 
 
+def for_platform(texts):
+    """The catalog's texts name the game totk.exe; elsewhere than Windows the binary is totk (layout.EXE)."""
+    if os.name == 'nt':
+        return texts
+    return {k: v.replace('totk.exe', 'totk') if isinstance(v, str) else v for k, v in texts.items()}
+
+
 def load_catalog(path=CATALOG):
-    return json.loads(path.read_text(encoding='utf-8'))
+    return for_platform(json.loads(path.read_text(encoding='utf-8')))
 
 
 def render(catalog, id, params=None):
