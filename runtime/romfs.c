@@ -609,9 +609,9 @@ static void read_enabled_mods(char names[64][96], int *count) {
 
 static int mod_romfs_dir(const char *mods, const char *name, char *romfs, size_t cap) {
     if (snprintf(romfs, cap, "%s/%s/romfs", mods, name) >= (int)cap) return 0;
+#ifndef _WIN32
     char host[1200];
     os_host_path(romfs, host, sizeof host);
-#ifndef _WIN32
     struct stat st;
     if (stat(host, &st) || !S_ISDIR(st.st_mode)) return 0;
     return 1;

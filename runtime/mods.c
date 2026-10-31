@@ -43,7 +43,11 @@ static int root_ready(void) {
     os_host_path(exe, g_root, sizeof g_root);
     size_t n = strlen(g_root);
     if (n + 6 >= sizeof g_root) return 0;
+#ifdef _WIN32
+    snprintf(g_root + n, sizeof g_root - n, "\\mods");
+#else
     snprintf(g_root + n, sizeof g_root - n, "/mods");
+#endif
     plat_file_mkdir_p(g_root);
     return 1;
 }
