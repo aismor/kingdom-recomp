@@ -18,6 +18,17 @@ static const struct {
     UiTextId label, desc;
 } k_builtins[] = {
     {"Recomp-Infinite-Stamina", "infstamina", UI_MENU_MOD_STAMINA, UI_MENU_MOD_STAMINA_DESC},
+    {"Recomp-Infinite-Horse-Stamina", "infhorse", UI_MENU_MOD_HORSE_STAMINA, UI_MENU_MOD_HORSE_STAMINA_DESC},
+    {"Recomp-Infinite-Health", "infhealth", UI_MENU_MOD_HEALTH, UI_MENU_MOD_HEALTH_DESC},
+    {"Recomp-Super-Jump", "superjump", UI_MENU_MOD_SUPER_JUMP, UI_MENU_MOD_SUPER_JUMP_DESC},
+    {"Recomp-Free-Shop", "freeshop", UI_MENU_MOD_FREE_SHOP, UI_MENU_MOD_FREE_SHOP_DESC},
+    {"Recomp-Infinite-Arrows", "infarrows", UI_MENU_MOD_ARROWS, UI_MENU_MOD_ARROWS_DESC},
+    {"Recomp-Infinite-Durability", "infdur", UI_MENU_MOD_DURABILITY, UI_MENU_MOD_DURABILITY_DESC},
+    {"Recomp-Infinite-Zonai", "infzonai", UI_MENU_MOD_ZONAI, UI_MENU_MOD_ZONAI_DESC},
+    {"Recomp-Infinite-Food", "infood", UI_MENU_MOD_FOOD, UI_MENU_MOD_FOOD_DESC},
+    {"Recomp-Pickup-8x", "pick8", UI_MENU_MOD_PICKUP_8X, UI_MENU_MOD_PICKUP_8X_DESC},
+    {"Recomp-Infinite-Food-Buff", "infoodbuff", UI_MENU_MOD_FOOD_BUFF, UI_MENU_MOD_FOOD_BUFF_DESC},
+    {"Recomp-Infinite-Battery", "infbat", UI_MENU_MOD_BATTERY, UI_MENU_MOD_BATTERY_DESC},
 };
 
 static int root_ready(void) {
