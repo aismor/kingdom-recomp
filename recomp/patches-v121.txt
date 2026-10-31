@@ -9,6 +9,10 @@ set cloth    TOTK_CLOTH_REALTIME 1
 set bounce   TOTK_HIGHFPS_FIX    1
 set output   TOTK_PATCH_OUTPUT   0
 set scene    TOTK_PATCH_SCENE    0
+set infstamina TOTK_INF_STAMINA  0
+
+# Infinite stamina while sprinting or climbing (bad1dea / Eden 1.2.1 pchtxt, main+0x9f1dc4): fmov s0, #10.0.
+site infstamina main 9f1dc4 1e212841 1e204041
 
 # 60 fps: the adaptive present-interval controller (main+0x8f26c8, 1.0.0 0x8f6bec) gets the minimum interval 1.
 site fps60 main 8f273c 6b08015f 7100055f   # clamp: cmp w10, #1 (was cmp w10, w8 = minimum)

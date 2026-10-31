@@ -15,6 +15,7 @@
 #include <string.h>
 
 #include "cfg.h"
+#include "mods.h"
 #include "fs.h"
 #include "gfx.h"
 #include "nvn_api.h"
@@ -339,6 +340,7 @@ void rt_boot(void) {
     HANDLE warm = CreateThread(NULL, 0, prewarm_main, NULL, 0, NULL);
     ldr_load(rt_config()->exefs);
     rt_patches_init();
+    mods_init();
     frame_step_init();
     res_init();
     cb_addr[0] = hostfn_register("<rtld loader_ready>", cb_loader_ready);

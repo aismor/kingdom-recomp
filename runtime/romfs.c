@@ -25,8 +25,13 @@
 #include "cfg.h"
 #include "fs.h"
 #include "host.h"
+#include "mods.h"
 #include "romfs_config.h"
 #include "romfs_path.h"
+
+#ifndef _WIN32
+#include <dirent.h>
+#endif
 
 #define NH 65536                     // RomFS handle slots
 #define READ_CHUNK (64u << 20)       // largest single ReadFile
@@ -437,7 +442,248 @@ static void heapdef_overlay(void) {
     res_heapdef_served();
 }
 
+// ---- user mods (mods/<name>/romfs -> mods/.active for TOTK_ROMFS_MODS)
+typedef struct {
+    char path[512];
+    char src[2048];
+} StagedMod;
+
+static int staged_path_cmp(const void *a, const void *b) {
+    return strcmp(((const StagedMod *)a)->path, ((const StagedMod *)b)->path);
+}
+
+static void hash_file(const char *path, char hex[65], uint64_t *out_size) {
+    HANDLE f = open_read(path, 0);
+    if (f == INVALID_HANDLE_VALUE) rt_fatal("mods: cannot read %s", path);
+    BY_HANDLE_FILE_INFORMATION info;
+    need(GetFileInformationByHandle(f, &info), "mods: file size");
+    uint64_t size = (uint64_t)info.nFileSizeHigh << 32 | info.nFileSizeLow;
+    sha_range(f, 0, size, hex, 0);
+    CloseHandle(f);
+    if (out_size) *out_size = size;
+}
+
+static void mkdir_parents(const char *file_path) {
+    char dir[2100];
+    snprintf(dir, sizeof dir, "%s", file_path);
+    char *slash = strrchr(dir, '/');
+    if (!slash) slash = strrchr(dir, '\\');
+    if (!slash) return;
+    *slash = 0;
+    plat_file_mkdir_p(dir);
+}
+
+static void staged_put(StagedMod **list, size_t *n, size_t *cap, const char *rel, const char *src) {
+    if (!romfs_path_valid_relative(rel)) rt_fatal("mods: invalid RomFS path %s", rel);
+    for (size_t i = 0; i < *n; i++)
+        if (!strcmp((*list)[i].path, rel)) {
+            snprintf((*list)[i].src, sizeof (*list)[i].src, "%s", src);
+            return;
+        }
+    if (*n == *cap) {
+        *cap = *cap ? *cap * 2 : 64;
+        *list = realloc(*list, *cap * sizeof **list);
+        need(*list != NULL, "mods: file list");
+    }
+    StagedMod *e = &(*list)[(*n)++];
+    snprintf(e->path, sizeof e->path, "%s", rel);
+    snprintf(e->src, sizeof e->src, "%s", src);
+}
+
+static void walk_romfs_tree(const char *romfs_root, const char *rel, int depth, StagedMod **list, size_t *n,
+                            size_t *cap) {
+    if (depth > MODS_WALK_MAX_DEPTH)
+        rt_fatal("mods: RomFS tree too deep under %s (symlink loop or bad layout)", romfs_root);
+    char dir[2048];
+    if (rel && *rel)
+        need(snprintf(dir, sizeof dir, "%s/%s", romfs_root, rel) < (int)sizeof dir, "mods: path");
+    else
+        need(snprintf(dir, sizeof dir, "%s", romfs_root) < (int)sizeof dir, "mods: path");
+#ifndef _WIN32
+    char host[2048];
+    os_host_path(dir, host, sizeof host);
+    DIR *d = opendir(host);
+    if (!d) return;
+    struct dirent *de;
+    while ((de = readdir(d))) {
+        if (!strcmp(de->d_name, ".") || !strcmp(de->d_name, "..")) continue;
+        char rel_path[512], abs_path[2200], child[2200];
+        if (rel && *rel)
+            need(snprintf(rel_path, sizeof rel_path, "%s/%s", rel, de->d_name) < (int)sizeof rel_path, "mods: path");
+        else
+            need(snprintf(rel_path, sizeof rel_path, "%s", de->d_name) < (int)sizeof rel_path, "mods: path");
+        need(snprintf(abs_path, sizeof abs_path, "%s/%s", romfs_root, rel_path) < (int)sizeof abs_path, "mods: path");
+        need(snprintf(child, sizeof child, "%s/%s", host, de->d_name) < (int)sizeof child, "mods: path");
+        struct stat st;
+        if (lstat(child, &st)) continue;
+        if (S_ISDIR(st.st_mode) && !S_ISLNK(st.st_mode))
+            walk_romfs_tree(romfs_root, rel_path, depth + 1, list, n, cap);
+        else if (S_ISREG(st.st_mode))
+            staged_put(list, n, cap, rel_path, abs_path);
+    }
+    closedir(d);
+#else
+    char scan[2048];
+    snprintf(scan, sizeof scan, "%s", dir);
+    wchar_t *wdir = fs_wide(scan);
+    WIN32_FIND_DATAW fd;
+    wchar_t pat[2200];
+    swprintf(pat, 2200, L"%s/*", wdir);
+    HANDLE h = FindFirstFileW(pat, &fd);
+    free(wdir);
+    if (h == INVALID_HANDLE_VALUE) return;
+    do {
+        char name[512];
+        WideCharToMultiByte(CP_UTF8, 0, fd.cFileName, -1, name, sizeof name, NULL, NULL);
+        if (!strcmp(name, ".") || !strcmp(name, "..")) continue;
+        char rel_path[512], abs_path[2200];
+        if (rel && *rel)
+            snprintf(rel_path, sizeof rel_path, "%s/%s", rel, name);
+        else
+            snprintf(rel_path, sizeof rel_path, "%s", name);
+        snprintf(abs_path, sizeof abs_path, "%s/%s", romfs_root, rel_path);
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+            walk_romfs_tree(romfs_root, rel_path, depth + 1, list, n, cap);
+        else
+            staged_put(list, n, cap, rel_path, abs_path);
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+#endif
+}
+
+static void rm_rf(const char *dir) {
+    char scan[2100];
+    snprintf(scan, sizeof scan, "%s/*", dir);
+    wchar_t wpat[2200];
+    MultiByteToWideChar(CP_UTF8, 0, scan, -1, wpat, 2200);
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileW(wpat, &fd);
+    if (h == INVALID_HANDLE_VALUE) return;
+    do {
+        char name[512];
+        WideCharToMultiByte(CP_UTF8, 0, fd.cFileName, -1, name, sizeof name, NULL, NULL);
+        if (!strcmp(name, ".") || !strcmp(name, "..")) continue;
+        char path[2200];
+        snprintf(path, sizeof path, "%s/%s", dir, name);
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+            rm_rf(path);
+        else
+            plat_file_delete(path);
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+}
+
+static void clear_active_dir(const char *active) {
+    plat_file_mkdir_p(active);
+    rm_rf(active);
+    plat_file_mkdir_p(active);
+}
+
+static void read_enabled_mods(char names[64][96], int *count) {
+    char folder[1024];
+    if (!mods_folder(folder, sizeof folder)) {
+        *count = 0;
+        return;
+    }
+    char path[1100];
+    snprintf(path, sizeof path, "%s/enabled.txt", folder);
+    uint64_t sz = 0;
+    uint8_t *data = plat_file_read(path, &sz);
+    *count = 0;
+    if (!data) return;
+    char *p = (char *)data;
+    for (size_t i = 0; i <= sz && *count < 64; i++) {
+        if (i == sz || data[i] == '\n' || data[i] == '\r') {
+            if (i < sz) data[i] = 0;
+            char *line = p;
+            while (*line == ' ' || *line == '\t') line++;
+            if (*line && *line != '#') {
+                snprintf(names[*count], 96, "%s", line);
+                (*count)++;
+            }
+            if (i < sz) p = (char *)data + i + 1;
+        }
+    }
+    free(data);
+}
+
+static int mod_romfs_dir(const char *mods, const char *name, char *romfs, size_t cap) {
+    if (snprintf(romfs, cap, "%s/%s/romfs", mods, name) >= (int)cap) return 0;
+    char host[1200];
+    os_host_path(romfs, host, sizeof host);
+#ifndef _WIN32
+    struct stat st;
+    if (stat(host, &st) || !S_ISDIR(st.st_mode)) return 0;
+    return 1;
+#else
+    wchar_t w[1200];
+    WIN32_FILE_ATTRIBUTE_DATA d;
+    if (MultiByteToWideChar(CP_UTF8, 0, romfs, -1, w, 1200) <= 0) return 0;
+    if (!GetFileAttributesExW(w, GetFileExInfoStandard, &d)) return 0;
+    return (d.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+#endif
+}
+
+void romfs_stage_user_mods(void) {
+    if (getenv("TOTK_ROMFS_MODS")) return;
+#ifdef ROMFS_MISSING
+    return;
+#else
+    if (!index_bytes || image == INVALID_HANDLE_VALUE) return;
+#endif
+    char mods[1024], active[1100];
+    if (!mods_folder(mods, sizeof mods)) return;
+    if (snprintf(active, sizeof active, "%s/.active", mods) >= (int)sizeof active) return;
+    clear_active_dir(active);
+    char enames[64][96];
+    int nmods = 0;
+    read_enabled_mods(enames, &nmods);
+    StagedMod *files = NULL;
+    size_t nfiles = 0, cap = 0;
+    for (int m = 0; m < nmods; m++) {
+        char romfs[1200];
+        if (!mod_romfs_dir(mods, enames[m], romfs, sizeof romfs)) continue;
+        walk_romfs_tree(romfs, "", 0, &files, &nfiles, &cap);
+    }
+    if (!nfiles) {
+        const char *keys[] = {"ROMFS_MODS"};
+        if (!getenv("TOTK_ROMFS_MODS")) cfg_reset(keys, 1);
+        free(files);
+        return;
+    }
+    qsort(files, nfiles, sizeof *files, staged_path_cmp);
+    char manifest[1100];
+    snprintf(manifest, sizeof manifest, "%s/manifest.tsv", active);
+    FILE *mf = fopen(manifest, "wb");
+    if (!mf) rt_fatal("mods: cannot write %s", manifest);
+    fputs("# path\tsize\tsha256\toriginal_sha256 (mods/.active)\n", mf);
+    for (size_t i = 0; i < nfiles; i++) {
+        char dst[2200], sha[65], orig[65];
+        uint64_t size = 0;
+        snprintf(dst, sizeof dst, "%s/%s", active, files[i].path);
+        mkdir_parents(dst);
+        uint64_t fsz = 0;
+        uint8_t *data = plat_file_read(files[i].src, &fsz);
+        if (!data || !fsz) rt_fatal("mods: empty mod file %s", files[i].src);
+        if (!plat_file_write(dst, data, (size_t)fsz)) rt_fatal("mods: cannot write %s", dst);
+        free(data);
+        hash_file(dst, sha, &size);
+        uint64_t idx = lower(files[i].path);
+        if (idx < file_count && !strcmp(entry_name(entry(idx)), files[i].path)) {
+            sha_range(image, entry(idx).offset, entry(idx).size, orig, 0);
+        } else
+            strcpy(orig, "-");
+        fprintf(mf, "%s\t%llu\t%s\t%s\n", files[i].path, (unsigned long long)size, sha, orig);
+    }
+    fclose(mf);
+    free(files);
+    if (!getenv("TOTK_ROMFS_MODS") && (!cfg_get("TOTK_ROMFS_MODS") || !*cfg_get("TOTK_ROMFS_MODS")))
+        cfg_set("TOTK_ROMFS_MODS", active);
+    rt_log("mods: staged %zu RomFS file(s) from enabled mods in %s", nfiles, active);
+}
+
 static void overlay_init(void) {
+    romfs_stage_user_mods();
     // TOTK_ROMFS_PATCHES unset: romfs-patches next to romfs-index.bin if it has a manifest (tools/make_romfs_patches.py)
     char def[2100];
     const char *patches = cfg_get("TOTK_ROMFS_PATCHES");

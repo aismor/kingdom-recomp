@@ -360,8 +360,10 @@ int plat_clipboard_set(const char *utf8) {
 }
 
 int plat_open_folder(const char *path) {
-    char cmd[4096];
-    snprintf(cmd, sizeof cmd, "xdg-open '%s' >/dev/null 2>&1 &", path);
+    char host[4096];
+    os_host_path(path, host, sizeof host);
+    char cmd[4200];
+    snprintf(cmd, sizeof cmd, "xdg-open '%s' >/dev/null 2>&1 &", host);
     return system(cmd) == 0;
 }
 

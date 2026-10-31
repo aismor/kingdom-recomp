@@ -28,8 +28,8 @@ static const char *const text_en[UI_TEXT_COUNT] = {
     SWKBD("Text entry", "Enter a name", "Horse", "OK", "Cancel", "Controller: A = OK, B = Cancel"),
 
     [UI_MENU_TITLE] = "Settings",
-    [UI_MENU_TAB_SCREEN] = "Screen", [UI_MENU_TAB_GAME] = "Game", [UI_MENU_TAB_SOUND] = "Sound",
-    [UI_MENU_TAB_CONTROLS] = "Controls", [UI_MENU_TAB_MENU] = "Menu", [UI_MENU_TAB_ADVANCED] = "Advanced",
+    [UI_MENU_TAB_SCREEN] = "Screen", [UI_MENU_TAB_GAME] = "Game", [UI_MENU_TAB_MODS] = "Mods",
+    [UI_MENU_TAB_SOUND] = "Sound", [UI_MENU_TAB_CONTROLS] = "Controls", [UI_MENU_TAB_MENU] = "Menu", [UI_MENU_TAB_ADVANCED] = "Advanced",
     [UI_MENU_CONTINUE] = "Continue", [UI_MENU_QUIT] = "Quit game",
     [UI_MENU_ON] = "On", [UI_MENU_OFF] = "Off", [UI_MENU_AUTO] = "Automatic", [UI_MENU_DEFAULT_MARK] = "default",
     [UI_MENU_AFTER_RESTART] = "after restart", [UI_MENU_SET_BY_ENV] = "set by environment variable",
@@ -81,6 +81,15 @@ static const char *const text_en[UI_TEXT_COUNT] = {
     [UI_MENU_GAME_LANG_AUTO] = "Automatic",
     [UI_MENU_OPERATION_MODE] = "Console mode",
     [UI_MENU_OPERATION_MODE_DESC] = "Whether the game thinks it runs docked or handheld.",
+    [UI_MENU_MODS_INTRO] =
+        "Built-in mods apply immediately. Drop RomFS mod folders into the mods folder (each with a romfs/ tree, as in "
+        "Eden); enable them here and restart to apply.",
+    [UI_MENU_MODS_EMPTY] = "No RomFS mods found. Built-in mods still appear when listed above.",
+    [UI_MENU_MODS_ROW_DESC] = "RomFS files from this folder replace game data on the next start.",
+    [UI_MENU_MODS_OPEN] = "Open mods folder",
+    [UI_MENU_MODS_OPEN_DESC] = "Opens the folder where mod directories go.",
+    [UI_MENU_MOD_STAMINA] = "Infinite stamina (sprint / climb)",
+    [UI_MENU_MOD_STAMINA_DESC] = "Stamina no longer drains while running or climbing. Applies immediately.",
     [UI_MENU_MODE_DOCKED] = "Docked", [UI_MENU_MODE_HANDHELD] = "Handheld",
 
     [UI_MENU_VOLUME] = "Volume", [UI_MENU_VOLUME_DESC] = "Master volume of the game.",
@@ -244,8 +253,8 @@ static const char *const text_ru[UI_TEXT_COUNT] = {
     SWKBD("Ввод текста", "Введите имя", "Лошадь", "ОК", "Отмена", "Контроллер: A — ОК, B — отмена"),
 
     [UI_MENU_TITLE] = "Настройки",
-    [UI_MENU_TAB_SCREEN] = "Экран", [UI_MENU_TAB_GAME] = "Игра", [UI_MENU_TAB_SOUND] = "Звук",
-    [UI_MENU_TAB_CONTROLS] = "Управление", [UI_MENU_TAB_MENU] = "Меню", [UI_MENU_TAB_ADVANCED] = "Дополнительно",
+    [UI_MENU_TAB_SCREEN] = "Экран", [UI_MENU_TAB_GAME] = "Игра", [UI_MENU_TAB_MODS] = "Моды",
+    [UI_MENU_TAB_SOUND] = "Звук", [UI_MENU_TAB_CONTROLS] = "Управление", [UI_MENU_TAB_MENU] = "Меню", [UI_MENU_TAB_ADVANCED] = "Дополнительно",
     [UI_MENU_CONTINUE] = "Продолжить", [UI_MENU_QUIT] = "Выйти из игры",
     [UI_MENU_ON] = "Вкл.", [UI_MENU_OFF] = "Выкл.", [UI_MENU_AUTO] = "Автоматически",
     [UI_MENU_DEFAULT_MARK] = "по умолчанию",
@@ -298,6 +307,15 @@ static const char *const text_ru[UI_TEXT_COUNT] = {
     [UI_MENU_GAME_LANG_AUTO] = "Автоматически",
     [UI_MENU_OPERATION_MODE] = "Режим консоли",
     [UI_MENU_OPERATION_MODE_DESC] = "Игра считает, что консоль в док-станции или в портативном режиме.",
+    [UI_MENU_MODS_INTRO] =
+        "Встроенные моды включаются сразу. Папки RomFS-модов кладите в mods/ (в каждой — romfs/, как в Eden); после "
+        "включения перезапустите игру.",
+    [UI_MENU_MODS_EMPTY] = "RomFS-модов нет. Встроенные моды всё равно отображаются выше.",
+    [UI_MENU_MODS_ROW_DESC] = "Файлы RomFS из этой папки заменят данные игры при следующем запуске.",
+    [UI_MENU_MODS_OPEN] = "Открыть папку mods",
+    [UI_MENU_MODS_OPEN_DESC] = "Открывает папку, куда кладут каталоги модов.",
+    [UI_MENU_MOD_STAMINA] = "Бесконечная выносливость (бег / лазание)",
+    [UI_MENU_MOD_STAMINA_DESC] = "Выносливость не тратится при беге и лазании. Включается сразу.",
     [UI_MENU_MODE_DOCKED] = "В док-станции", [UI_MENU_MODE_HANDHELD] = "Портативный",
 
     [UI_MENU_VOLUME] = "Громкость", [UI_MENU_VOLUME_DESC] = "Общая громкость игры.",
@@ -466,8 +484,8 @@ static const char *const text_pt[UI_TEXT_COUNT] = {
     SWKBD("Inserir texto", "Digite um nome", "Cavalo", "OK", "Cancelar", "Controle: A = OK, B = Cancelar"),
 
     [UI_MENU_TITLE] = "Configurações",
-    [UI_MENU_TAB_SCREEN] = "Tela", [UI_MENU_TAB_GAME] = "Jogo", [UI_MENU_TAB_SOUND] = "Som",
-    [UI_MENU_TAB_CONTROLS] = "Controles", [UI_MENU_TAB_MENU] = "Menu", [UI_MENU_TAB_ADVANCED] = "Avançado",
+    [UI_MENU_TAB_SCREEN] = "Tela", [UI_MENU_TAB_GAME] = "Jogo", [UI_MENU_TAB_MODS] = "Mods",
+    [UI_MENU_TAB_SOUND] = "Som", [UI_MENU_TAB_CONTROLS] = "Controles", [UI_MENU_TAB_MENU] = "Menu", [UI_MENU_TAB_ADVANCED] = "Avançado",
     [UI_MENU_CONTINUE] = "Continuar", [UI_MENU_QUIT] = "Sair do jogo",
     [UI_MENU_ON] = "Ligado", [UI_MENU_OFF] = "Desligado", [UI_MENU_AUTO] = "Automático",
     [UI_MENU_DEFAULT_MARK] = "padrão",
@@ -520,6 +538,15 @@ static const char *const text_pt[UI_TEXT_COUNT] = {
     [UI_MENU_GAME_LANG_AUTO] = "Automático",
     [UI_MENU_OPERATION_MODE] = "Modo do console",
     [UI_MENU_OPERATION_MODE_DESC] = "Se o jogo acha que roda na base ou no modo portátil.",
+    [UI_MENU_MODS_INTRO] =
+        "Mods integrados aplicam na hora. Coloque mods RomFS na pasta mods (cada um com romfs/, como no Eden); ative "
+        "aqui e reinicie o jogo para aplicar.",
+    [UI_MENU_MODS_EMPTY] = "Nenhum mod RomFS encontrado. Mods integrados aparecem acima quando existirem.",
+    [UI_MENU_MODS_ROW_DESC] = "Arquivos RomFS desta pasta substituem dados do jogo na próxima inicialização.",
+    [UI_MENU_MODS_OPEN] = "Abrir pasta de mods",
+    [UI_MENU_MODS_OPEN_DESC] = "Abre a pasta onde ficam os diretórios dos mods.",
+    [UI_MENU_MOD_STAMINA] = "Vigor infinito (correr / escalar)",
+    [UI_MENU_MOD_STAMINA_DESC] = "O vigor não gasta ao correr ou escalar. Aplica na hora.",
     [UI_MENU_MODE_DOCKED] = "Na base", [UI_MENU_MODE_HANDHELD] = "Portátil",
 
     [UI_MENU_VOLUME] = "Volume", [UI_MENU_VOLUME_DESC] = "Volume geral do jogo.",
