@@ -13,6 +13,9 @@
 #include <poll.h>
 #include <spawn.h>
 #include <wchar.h>
+#include <linux/fs.h>
+#include <linux/userfaultfd.h>
+#include <sys/ioctl.h>
 #include <sys/resource.h>
 #include <sys/syscall.h>
 #include <sys/timerfd.h>
@@ -37,6 +40,9 @@
 // A kernel write into an armed page fails with EFAULT instead of faulting, so ReadFile disarms its buffer first
 // (ww_prepare_write). Regions are prepended and never unlinked (a release zeroes the size), so the fault handler walks
 // the list without a lock.
+// Where the kernel has it (Linux 6.7+), the kernel keeps the write watch instead (ww_kernel_*): a userfaultfd in async
+// write-protect mode clears a page's protection on its first write, a minor fault with no signal and no mprotect, and
+// PAGEMAP_SCAN reports the written pages and protects them again in one call. Those regions never arm a page.
 #define PG 4096ull
 #define MEM_FREE 0x10000
 #define MEM_PRIVATE 0x20000
@@ -46,6 +52,7 @@ typedef struct Region {
     uint64_t base;
     volatile uint64_t size;   // 0 once released
     int write_watch;
+    int kernel_ww;            // write watch kept by the kernel (ww_kernel_*), not by WW_ARMED
     uint8_t *pg;              // size / PG state bytes
     struct Region *next;
 } Region;
@@ -84,7 +91,7 @@ static Region *find_range(uint64_t a, uint64_t n) {
     return r && n <= r->size - (a - r->base) ? r : NULL;
 }
 
-static Region *add_region(uint64_t base, uint64_t size, int ww) {
+static Region *add_region(uint64_t base, uint64_t size, int ww, int kernel_ww) {
     Region *r = calloc(1, sizeof *r);
     if (!r) return NULL;
     void *pg = mmap(NULL, size / PG, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
@@ -95,6 +102,7 @@ static Region *add_region(uint64_t base, uint64_t size, int ww) {
     r->base = base;
     r->size = size;
     r->write_watch = ww;
+    r->kernel_ww = kernel_ww;
     r->pg = pg;
     pthread_mutex_lock(&region_lock);
     r->next = regions;
@@ -141,7 +149,7 @@ static int apply_host(Region *r, uint64_t i0, uint64_t i1) {
 static void set_pages(Region *r, uint64_t i0, uint64_t i1, int code) {
     for (uint64_t i = i0; i < i1; i++) {
         uint8_t s = code == PG_RESERVED ? 0 : (uint8_t)(code | (r->pg[i] & WW_DIRTY));
-        if (r->write_watch && code == PG_READWRITE && !(s & WW_DIRTY)) s |= WW_ARMED;
+        if (r->write_watch && !r->kernel_ww && code == PG_READWRITE && !(s & WW_DIRTY)) s |= WW_ARMED;
         r->pg[i] = s;
     }
 }
@@ -182,6 +190,94 @@ static void ww_prepare_write(const void *p, uint64_t n) {
 // A device pins imported host memory for writing, which an armed (read-only) page refuses: vk_memory.c import_pool.
 void os_prepare_host_import(const void *p, size_t n) { ww_prepare_write(p, n); }
 
+// ---- kernel write watch. A page the kernel never populated counts as written until UFFDIO_WRITEPROTECT marks it, so
+// pages are marked when they leave the reserved state (ww_kernel_commit) and only committed pages are scanned: a
+// decommit drops the mark with the page.
+static int ww_ufd = -1, ww_pagemap = -1;
+static pthread_once_t ww_kernel_once = PTHREAD_ONCE_INIT;
+
+static void ww_kernel_init(void) {
+    int fd = (int)syscall(SYS_userfaultfd, O_CLOEXEC | UFFD_USER_MODE_ONLY);
+    if (fd < 0) return;
+    struct uffdio_api api = {.api = UFFD_API, .features = UFFD_FEATURE_WP_ASYNC | UFFD_FEATURE_WP_UNPOPULATED};
+    int pm = open("/proc/self/pagemap", O_RDONLY | O_CLOEXEC);
+    if (pm < 0 || ioctl(fd, UFFDIO_API, &api)) {
+        if (pm >= 0) close(pm);
+        close(fd);
+        return;
+    }
+    ww_ufd = fd;
+    ww_pagemap = pm;
+}
+
+// A new write-watched reservation. 0: the kernel cannot keep its write watch, the software one does.
+static int ww_kernel_register(uint64_t base, uint64_t size) {
+    pthread_once(&ww_kernel_once, ww_kernel_init);
+    if (ww_ufd < 0) return 0;
+    struct uffdio_register reg = {.range = {.start = base, .len = size}, .mode = UFFDIO_REGISTER_MODE_WP};
+    return ioctl(ww_ufd, UFFDIO_REGISTER, &reg) == 0;
+}
+
+// Before pages [i0, i1) of r are committed (ww_lock held): the reserved ones are marked unwritten. Pages already
+// committed keep their state, as a Win32 commit of committed pages keeps their contents.
+static int ww_kernel_commit(Region *r, uint64_t i0, uint64_t i1) {
+    if (!r->kernel_ww) return 1;
+    int ok = 1;
+    while (i0 < i1) {
+        if (r->pg[i0] & PG_PROT) {
+            i0++;
+            continue;
+        }
+        uint64_t j = i0 + 1;
+        while (j < i1 && !(r->pg[j] & PG_PROT)) j++;
+        struct uffdio_writeprotect wp = {.range = {.start = r->base + i0 * PG, .len = (j - i0) * PG},
+                                         .mode = UFFDIO_WRITEPROTECT_MODE_WP};
+        if (ioctl(ww_ufd, UFFDIO_WRITEPROTECT, &wp)) ok = 0;
+        i0 = j;
+    }
+    return ok;
+}
+
+// GetWriteWatch over pages [i, i1) of a kernel-watched region (ww_lock held): one PAGEMAP_SCAN per run of committed
+// pages; with reset, the scan protects the pages it reports again. 0 on success, as GetWriteWatch.
+static UINT ww_kernel_query(Region *r, uint64_t i, uint64_t i1, int reset, void **pages, uint64_t max, uint64_t *count) {
+    struct page_region v[64];
+    uint64_t n = 0;
+    const uint64_t prot8 = PG_PROT * 0x0101010101010101ull;
+    while (i < i1 && n < max) {
+        if (!(i & 7) && i + 8 <= i1) {
+            uint64_t w;
+            memcpy(&w, r->pg + i, 8);
+            if (!(w & prot8)) {
+                i += 8;
+                continue;
+            }
+        }
+        if (!(r->pg[i] & PG_PROT)) {
+            i++;
+            continue;
+        }
+        uint64_t j = i + 1;
+        while (j < i1 && (r->pg[j] & PG_PROT)) j++;
+        uint64_t a = r->base + i * PG, end = r->base + j * PG;
+        while (a < end && n < max) {
+            struct pm_scan_arg arg = {.size = sizeof arg, .flags = reset ? PM_SCAN_WP_MATCHING : 0, .start = a,
+                                      .end = end, .vec = (uint64_t)(uintptr_t)v, .vec_len = sizeof v / sizeof *v,
+                                      .max_pages = max - n, .category_mask = PAGE_IS_WRITTEN,
+                                      .return_mask = PAGE_IS_WRITTEN};
+            long got = ioctl(ww_pagemap, PAGEMAP_SCAN, &arg);
+            if (got < 0) return 1;
+            for (long k = 0; k < got; k++)
+                for (uint64_t p = v[k].start; p < v[k].end && n < max; p += PG) pages[n++] = (void *)(uintptr_t)p;
+            if (arg.walk_end <= a) break;
+            a = arg.walk_end;
+        }
+        i = j;
+    }
+    *count = n;
+    return 0;
+}
+
 void *VirtualAlloc(void *addr, SIZE_T size, DWORD type, DWORD prot) {
     uint64_t at = (uint64_t)(uintptr_t)addr & ~(PG - 1);
     int ww = (type & MEM_WRITE_WATCH) != 0;
@@ -199,8 +295,9 @@ void *VirtualAlloc(void *addr, SIZE_T size, DWORD type, DWORD prot) {
         }
         uint64_t i0 = (at - r->base) / PG, i1 = (end - r->base) / PG;
         plat_mutex_lock(&ww_lock);
+        int ok = ww_kernel_commit(r, i0, i1);
         set_pages(r, i0, i1, prot_code(prot));
-        int ok = apply_host(r, i0, i1);
+        ok = apply_host(r, i0, i1) && ok;
         plat_mutex_unlock(&ww_lock);
         if (!ok) {
             last_error = ERROR_NOT_ENOUGH_MEMORY;
@@ -222,7 +319,8 @@ void *VirtualAlloc(void *addr, SIZE_T size, DWORD type, DWORD prot) {
         last_error = ERROR_INVALID_ADDRESS;
         return NULL;
     }
-    Region *r = add_region((uint64_t)(uintptr_t)p, size, ww);
+    int kernel_ww = ww && ww_kernel_register((uint64_t)(uintptr_t)p, size);
+    Region *r = add_region((uint64_t)(uintptr_t)p, size, ww, kernel_ww);
     if (!r) {
         munmap(p, size);
         last_error = ERROR_NOT_ENOUGH_MEMORY;
@@ -230,6 +328,7 @@ void *VirtualAlloc(void *addr, SIZE_T size, DWORD type, DWORD prot) {
     }
     if (type & MEM_COMMIT) {
         plat_mutex_lock(&ww_lock);
+        ww_kernel_commit(r, 0, size / PG);
         set_pages(r, 0, size / PG, prot_code(prot));
         apply_host(r, 0, size / PG);
         plat_mutex_unlock(&ww_lock);
@@ -393,6 +492,12 @@ UINT GetWriteWatch(DWORD flags, void *addr, SIZE_T size, void **pages, PULONG_PT
     int reset = (flags & WRITE_WATCH_FLAG_RESET) != 0;
     const uint64_t dirty8 = WW_DIRTY * 0x0101010101010101ull;
     plat_mutex_lock(&ww_lock);
+    if (r->kernel_ww) {
+        UINT e = ww_kernel_query(r, i, i1, reset, pages, max, &n);
+        plat_mutex_unlock(&ww_lock);
+        *count = n;
+        return e;
+    }
     while (i < i1 && n < max) {
         if (!(i & 7) && i + 8 <= i1) {
             uint64_t w;
