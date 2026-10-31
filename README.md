@@ -1,6 +1,6 @@
-# TotK Recomp
+# Kingdom Recomp
 
-**TotK Recomp** is a static recompilation of *The Legend of Zelda: Tears of the Kingdom* (Nintendo Switch, 2023) into a native Windows x86-64 application ([docs/architecture.md](docs/architecture.md)).
+**Kingdom Recomp** is based on [TotK Recomp](https://github.com/valentderah/totk-pc-recomp) by Valiantsin Dzerakh, with a native Linux host. It is a static recompilation of *The Legend of Zelda: Tears of the Kingdom* (Nintendo Switch, 2023) into a native Windows x86-64 application ([docs/architecture.md](docs/architecture.md)).
 
 > [!IMPORTANT]
 > **No game files are included.** You need your own legally obtained copy of *Tears of the Kingdom*, dumped from your own console: the base game and the 1.2.1 or 1.4.3 update. Instructions for obtaining those files will not be provided.
@@ -54,7 +54,7 @@ To update, run a newer `TotK-Setup.exe` on the same folder; saves and settings a
 
 ## Credits
 
-TotK Recomp builds on the projects below. What was taken from each, with its license, is listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Kingdom Recomp is based on [TotK Recomp](https://github.com/valentderah/totk-pc-recomp) by Valiantsin Dzerakh, which builds on the projects below. What was taken from each, with its license, is listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 - [LAS Recomp](https://github.com/peiikai/LASRecomp)
 - [MacNativeGames](https://github.com/ly05010419/MacNativeGames)
@@ -66,13 +66,13 @@ TotK Recomp builds on the projects below. What was taken from each, with its lic
 - [SDL 3](https://libsdl.org), [Dear ImGui](https://github.com/ocornut/imgui), [AMD FSR 1](https://github.com/GPUOpen-Effects/FidelityFX-FSR), [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator), [libopus](https://opus-codec.org), [libvpx](https://chromium.googlesource.com/webm/libvpx), [Zstandard](https://github.com/facebook/zstd)
 - [Switchbrew](https://switchbrew.org) and the Switch homebrew community
 
-Native Linux host port (experimental): [Bruno Morais (aismor)](https://github.com/aismor) — [totk-pc-recomp fork](https://github.com/aismor/totk-pc-recomp); guides [docs/linux.en.md](docs/linux.en.md) / [docs/linux.pt.md](docs/linux.pt.md).
+Native Linux host port (experimental): [Bruno Morais (aismor)](https://github.com/aismor) — [kingdom-recomp](https://github.com/aismor/kingdom-recomp); guides [docs/linux.en.md](docs/linux.en.md) / [docs/linux.pt.md](docs/linux.pt.md).
 
 ## License
 
 The project's own code is under the [MIT License](LICENSE); third-party code keeps its own license ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)). The license grants nothing for Nintendo's game.
 
-TotK Recomp is an independent, non-commercial fan project, not affiliated with or endorsed by Nintendo. *The Legend of Zelda*, *Tears of the Kingdom* and *Nintendo Switch* are trademarks of Nintendo.
+Kingdom Recomp is an independent, non-commercial fan project, not affiliated with or endorsed by Nintendo. *The Legend of Zelda*, *Tears of the Kingdom* and *Nintendo Switch* are trademarks of Nintendo.
 
 ## Building from source
 

@@ -606,7 +606,7 @@ static DWORD WINAPI window_main(void *arg) {
     cfg_window_size(&cw, &ch);
     g_background = cfg_get("TOTK_BACKGROUND_WINDOW") && atoi(cfg_get("TOTK_BACKGROUND_WINDOW"));
     SDL_WindowFlags flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE;
-    g_window = SDL_CreateWindow("TotK Recomp", cw, ch, flags);
+    g_window = SDL_CreateWindow("Kingdom Recomp", cw, ch, flags);
     if (!g_window) {
         rt_log("gfx: SDL_CreateWindow failed (%s)", SDL_GetError());
         g_wnd_failed = 1;

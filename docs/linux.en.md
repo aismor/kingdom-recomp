@@ -1,6 +1,6 @@
-# TotK Recomp on Linux
+# Kingdom Recomp on Linux
 
-Guide to **build and run** TotK Recomp natively on Linux (x86-64, Vulkan, SDL3), without Wine or other Windows compatibility layers.
+Guide to **build and run** Kingdom Recomp (based on [TotK Recomp](https://github.com/valentderah/totk-pc-recomp)) natively on Linux (x86-64, Vulkan, SDL3), without Wine or other Windows compatibility layers.
 
 For project architecture, see [architecture.md](architecture.md). Extraction flow and game versions match [building.md](building.md); this document covers Linux-specific steps only.
 
@@ -25,8 +25,8 @@ Optional: [uv](https://docs.astral.sh/uv/) to create Python environments (same a
 ## 1. Clone the repository
 
 ```bash
-git clone https://github.com/aismor/totk-pc-recomp.git
-cd totk-pc-recomp
+git clone https://github.com/aismor/kingdom-recomp.git
+cd kingdom-recomp
 ```
 
 Use the fork or branch that contains Linux host support.
@@ -199,7 +199,7 @@ Keep the window focused when possible; unfocused windows affect mouse capture be
 ## Layout
 
 ```
-totk-pc-recomp/
+kingdom-recomp/
   config.local.toml          # your paths (gitignored)
   build/
     extracted/<ver>/         # extracted exefs, romfs
@@ -223,7 +223,7 @@ totk-pc-recomp/
 
 ## Credits (Linux port)
 
-Linux host implementation and guides: [Bruno Morais (aismor)](https://github.com/aismor) — [github.com/aismor/totk-pc-recomp](https://github.com/aismor/totk-pc-recomp).
+Linux host implementation and guides: [Bruno Morais (aismor)](https://github.com/aismor) — [github.com/aismor/kingdom-recomp](https://github.com/aismor/kingdom-recomp).
 
 ## Contributing
 
