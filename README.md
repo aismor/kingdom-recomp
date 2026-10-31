@@ -66,6 +66,8 @@ TotK Recomp builds on the projects below. What was taken from each, with its lic
 - [SDL 3](https://libsdl.org), [Dear ImGui](https://github.com/ocornut/imgui), [AMD FSR 1](https://github.com/GPUOpen-Effects/FidelityFX-FSR), [Vulkan Memory Allocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator), [libopus](https://opus-codec.org), [libvpx](https://chromium.googlesource.com/webm/libvpx), [Zstandard](https://github.com/facebook/zstd)
 - [Switchbrew](https://switchbrew.org) and the Switch homebrew community
 
+Native Linux host port (experimental): [Bruno Morais (aismor)](https://github.com/aismor) — [totk-pc-recomp fork](https://github.com/aismor/totk-pc-recomp); guides [docs/linux.en.md](docs/linux.en.md) / [docs/linux.pt.md](docs/linux.pt.md).
+
 ## License
 
 The project's own code is under the [MIT License](LICENSE); third-party code keeps its own license ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)). The license grants nothing for Nintendo's game.

@@ -25,7 +25,7 @@ Opcional: [uv](https://docs.astral.sh/uv/) para criar os ambientes Python (como 
 ## 1. Clonar o repositório
 
 ```bash
-git clone https://github.com/<seu-usuario>/totk-pc-recomp.git
+git clone https://github.com/aismor/totk-pc-recomp.git
 cd totk-pc-recomp
 ```
 
@@ -220,6 +220,10 @@ totk-pc-recomp/
 | Gamepad não responde | Conecte antes ou reinicie o jogo; teste `evtest` / `/dev/input/event*` no sistema; layout em `totk.ini` (`pad_layout`). |
 | Config “estragou” o jogo | Apague ou restaure `totk.ini`; remova linhas experimentais (`replay_async`, `free_cores`) se existirem. |
 | Save “perdeu” última sessão | Mensagem `host save recovery: deleted the last run's working copy` = queda antes de commit; save commitado anterior permanece em `build/profile/save/`. |
+
+## Créditos (port Linux)
+
+Implementação e documentação do host Linux: [Bruno Morais (aismor)](https://github.com/aismor) — repositório [github.com/aismor/totk-pc-recomp](https://github.com/aismor/totk-pc-recomp).
 
 ## Contribuir
 
