@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <pdh.h>
 #include <pdhmsg.h>
+#include <psapi.h>
 #include <shellapi.h>
 #include <stdlib.h>
 #include <string.h>

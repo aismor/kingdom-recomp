@@ -206,6 +206,7 @@ def c_string(s):
 
 
 RUNTIME = ROOT / 'runtime'   # --runtime: a copy of runtime/ lets a task build without touching the shared tree
+LINUX_RT_FILES = ('os_linux.c', 'os_fiber_linux.c', 'sha256_portable.c')
 
 
 def runtime_sources(skip=()):
@@ -217,7 +218,10 @@ def runtime_sources(skip=()):
         pats = ('*.c', '*.cpp', 'platform/*.c', '*.rc', 'ui/*.cpp', 'third_party/imgui/*.cpp',
                 'third_party/imgui/backends/*.cpp')
     skip = set(skip)
-    if not IS_WINDOWS:
+    if IS_WINDOWS:
+        # The Linux-only sources the branch below adds: most carry no _WIN32 guard
+        skip |= {*linux_rt_extra(), *LINUX_RT_FILES, 'linux.c'}
+    else:
         skip |= linux_rt_skip()
         skip.add('win32.c')
         skip.add('os_linux.c')  # linked explicitly below via glob — actually os_linux is top-level runtime/os_linux.c
@@ -234,7 +238,7 @@ def runtime_sources(skip=()):
             p = RUNTIME / name
             if p.is_file() and p not in files:
                 files.append(p)
-        for extra in ('os_linux.c', 'os_fiber_linux.c', 'sha256_portable.c'):
+        for extra in LINUX_RT_FILES:
             p = RUNTIME / extra
             if p.is_file() and p not in files:
                 files.append(p)

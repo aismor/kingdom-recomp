@@ -6,6 +6,9 @@
 // the mouse and focus changes go to it; the game polls the keyboard on its own (input_win.c) and gets nothing while the
 // menu is open (input_menu).
 #include "os.h"
+#ifdef _WIN32
+#include <windowsx.h>   // GET_X_LPARAM, GET_Y_LPARAM; os.h defines them on Linux
+#endif
 
 #include "imgui.h"
 

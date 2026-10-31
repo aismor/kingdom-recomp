@@ -162,12 +162,12 @@ def build_deps(out, llvm, sysroot):
     d = out / 'runtime' / 'deps'
     (d / 'include' / 'vma').mkdir(parents=True, exist_ok=True)
     (d / 'lib').mkdir(parents=True, exist_ok=True)
-    vk = tar_extract('vulkan-headers-src', WORK / 'vulkan-headers', ['Vulkan-Headers-1.4.363/include',
+    vk = tar_extract('vulkan-headers-src', WORK / 'vulkan-headers-src', ['Vulkan-Headers-1.4.363/include',
                                                                      'Vulkan-Headers-1.4.363/LICENSE.md'], strip=1)
     for sub in ('vulkan', 'vk_video'):
         shutil.copytree(vk / 'include' / sub, d / 'include' / sub)
     shutil.copy2(mr.fetch('vma-header'), d / 'include' / 'vma' / 'vk_mem_alloc.h')
-    zs = tar_extract('zstd-src', WORK / 'zstd', ['zstd-1.5.7'], strip=1)
+    zs = tar_extract('zstd-src', WORK / 'zstd-src', ['zstd-1.5.7'], strip=1)
     lib = zs / 'lib'
     if not (lib / 'libzstd.a').is_file():
         run(['make', '-C', lib, f'-j{os.cpu_count() or 4}', 'libzstd.a', f'CC={sysroot_cc(llvm, sysroot)}',
@@ -345,8 +345,8 @@ def collect_licenses(out, sysroot):
         (doc / 'libc6' / 'copyright', 'glibc-copyright.txt'),
         (doc / 'gcc-10-base' / 'copyright', 'libstdc++-copyright.txt'),
         (doc / 'libvulkan1' / 'copyright', 'vulkan-loader-copyright.txt'),
-        (WORK / 'vulkan-headers' / 'LICENSE.md', 'vulkan-headers-LICENSE.txt'),
-        (WORK / 'zstd' / 'LICENSE', 'zstd-LICENSE.txt'),
+        (WORK / 'vulkan-headers-src' / 'LICENSE.md', 'vulkan-headers-LICENSE.txt'),
+        (WORK / 'zstd-src' / 'LICENSE', 'zstd-LICENSE.txt'),
         (out / 'python' / 'lib' / f'python{sys_version(out)}' / 'LICENSE.txt', 'python-LICENSE.txt'),
         (ROOT / 'runtime' / 'shaders' / 'ffx' / 'LICENSE.txt', 'FidelityFX-FSR-LICENSE.txt'),
         (WORK / 'hactool-linux' / 'LICENSE', 'hactool-LICENSE.txt'),
