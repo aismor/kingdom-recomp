@@ -4,7 +4,7 @@
 
 static const uint32_t k[64] = {
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7de3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
     0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
     0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
     0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
@@ -33,27 +33,69 @@ static void sha256_transform(uint32_t st[8], const uint8_t chunk[64]) {
     st[0] += a; st[1] += b; st[2] += c; st[3] += d; st[4] += e; st[5] += f; st[6] += g; st[7] += h;
 }
 
-void rt_sha256(const void *data, size_t len, uint8_t out[32]) {
-    uint32_t st[8] = {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
-    uint8_t buf[128];
-    size_t i = 0;
-    for (; i + 64 <= len; i += 64) sha256_transform(st, (const uint8_t *)data + i);
-    size_t rem = len - i;
-    memcpy(buf, (const uint8_t *)data + i, rem);
-    buf[rem++] = 0x80;
-    if (rem > 64 - 8) {
-        memset(buf + rem, 0, 128 - rem);
-        sha256_transform(st, buf);
-        rem = 0;
-        memset(buf, 0, 64);
-    } else memset(buf + rem, 0, 64 - rem);
-    uint64_t bits = (uint64_t)len * 8;
-    for (int j = 0; j < 8; j++) buf[63 - j] = (uint8_t)(bits >> (8 * j));
-    sha256_transform(st, buf);
-    for (int j = 0; j < 8; j++) {
-        out[j * 4] = (uint8_t)(st[j] >> 24);
-        out[j * 4 + 1] = (uint8_t)(st[j] >> 16);
-        out[j * 4 + 2] = (uint8_t)(st[j] >> 8);
-        out[j * 4 + 3] = (uint8_t)st[j];
+typedef struct {
+    uint32_t st[8];
+    uint64_t total;
+    uint8_t buf[64];
+    size_t buf_n;
+} RtSha256Ctx;
+
+// The last one or two blocks: the buffered tail, 0x80, zeros, and the message length in bits (big-endian) at the end.
+static void sha256_pad(RtSha256Ctx *c) {
+    uint8_t block[128] = {0};
+    size_t n = c->buf_n;
+    memcpy(block, c->buf, n);
+    block[n] = 0x80;
+    size_t len = n + 9 <= 64 ? 64 : 128;
+    uint64_t bits = c->total * 8;
+    for (int j = 0; j < 8; j++) block[len - 1 - j] = (uint8_t)(bits >> (8 * j));
+    sha256_transform(c->st, block);
+    if (len == 128) sha256_transform(c->st, block + 64);
+}
+
+void rt_sha256_begin(RtSha256Ctx *c) {
+    static const uint32_t iv[8] = {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+                                   0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
+    memcpy(c->st, iv, sizeof iv);
+    c->total = 0;
+    c->buf_n = 0;
+}
+
+void rt_sha256_feed(RtSha256Ctx *c, const void *data, size_t len) {
+    const uint8_t *p = data;
+    c->total += len;
+    if (c->buf_n) {
+        size_t take = 64 - c->buf_n;
+        if (take > len) take = len;
+        memcpy(c->buf + c->buf_n, p, take);
+        c->buf_n += take;
+        p += take;
+        len -= take;
+        if (c->buf_n == 64) {
+            sha256_transform(c->st, c->buf);
+            c->buf_n = 0;
+        }
     }
+    for (; len >= 64; len -= 64, p += 64) sha256_transform(c->st, p);
+    if (len) {
+        memcpy(c->buf, p, len);
+        c->buf_n = len;
+    }
+}
+
+void rt_sha256_end(RtSha256Ctx *c, uint8_t out[32]) {
+    sha256_pad(c);
+    for (int j = 0; j < 8; j++) {
+        out[j * 4] = (uint8_t)(c->st[j] >> 24);
+        out[j * 4 + 1] = (uint8_t)(c->st[j] >> 16);
+        out[j * 4 + 2] = (uint8_t)(c->st[j] >> 8);
+        out[j * 4 + 3] = (uint8_t)c->st[j];
+    }
+}
+
+void rt_sha256(const void *data, size_t len, uint8_t out[32]) {
+    RtSha256Ctx c;
+    rt_sha256_begin(&c);
+    rt_sha256_feed(&c, data, len);
+    rt_sha256_end(&c, out);
 }

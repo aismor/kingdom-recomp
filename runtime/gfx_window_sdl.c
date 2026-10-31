@@ -6,7 +6,8 @@
 // The swapchain is rebuilt lazily: a resize only marks it dirty, the next present (or gfx_window_resize) rebuilds it.
 //
 // The in-game menu (ui/menu.h) draws over the game image in the present's command buffer, after the blit; keyboard and
-// mouse reach input_window_msg / menu_window_msg through synthetic Win32-style messages (ui/menu_sdl.cpp, input_sdl.c).
+// mouse reach input_window_msg (input_win.c) and menu_window_msg (ui/menu_win.cpp) through synthetic Win32-style
+// messages, and their state feeds GetAsyncKeyState and GetForegroundWindow (os_linux.c os_key_state, os_foreground).
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -216,6 +217,14 @@ static void window_client_size(int *w, int *h) {
 
 static HWND window_hwnd(void) { return (HWND)g_window; }
 
+BOOL GetClientRect(HWND h, RECT *r) {
+    if (!r || !h || h != window_hwnd()) return FALSE;
+    int w, hh;
+    window_client_size(&w, &hh);
+    *r = (RECT){0, 0, w, hh};
+    return TRUE;
+}
+
 // ---- window thread
 static int g_saved_x, g_saved_y, g_saved_w, g_saved_h;   // restored when fullscreen ends
 
@@ -380,6 +389,14 @@ static WPARAM sdl_key_to_vk(SDL_Keycode key) {
 static void dispatch_winmsg(UINT m, WPARAM w, LPARAM l) {
     HWND h = window_hwnd();
     LRESULT input_res, menu_res;
+    // Ahead of the handlers, as Windows updates its key state and foreground window before the message arrives.
+    switch (m) {
+    case WM_KEYDOWN: case WM_KEYUP: os_key_state((int)w, m == WM_KEYDOWN); break;
+    case WM_LBUTTONDOWN: case WM_LBUTTONUP: os_key_state(VK_LBUTTON, m == WM_LBUTTONDOWN); break;
+    case WM_RBUTTONDOWN: case WM_RBUTTONUP: os_key_state(VK_RBUTTON, m == WM_RBUTTONDOWN); break;
+    case WM_MBUTTONDOWN: case WM_MBUTTONUP: os_key_state(VK_MBUTTON, m == WM_MBUTTONDOWN); break;
+    case WM_ACTIVATEAPP: os_foreground(w ? h : NULL); break;
+    }
     if (input_window_msg(h, m, w, l, &input_res)) return;
     if (menu_window_msg(h, m, w, l, &menu_res)) return;
     SDL_Window *win = g_window;
@@ -431,6 +448,73 @@ static void dispatch_winmsg(UINT m, WPARAM w, LPARAM l) {
     }
 }
 
+// ---- messages from other threads
+// SendMessageW and PostMessageW queue a message for the window thread, which dispatches it between SDL event polls,
+// as Win32 delivers a cross-thread message on the window's own thread. SendMessageW waits for the dispatch; called on
+// the window thread it dispatches at once.
+typedef struct { UINT m; WPARAM w; LPARAM l; } WinMsg;
+#define MSGQ_CAP 64
+static SRWLOCK g_msgq_lock = SRWLOCK_INIT;
+static CONDITION_VARIABLE g_msgq_done = CONDITION_VARIABLE_INIT;
+static WinMsg g_msgq[MSGQ_CAP];
+static uint64_t g_msgq_head, g_msgq_tail;   // messages queued, messages dispatched
+static DWORD g_window_tid;
+
+static void msgq_drain(void) {
+    AcquireSRWLockExclusive(&g_msgq_lock);
+    while (g_msgq_tail < g_msgq_head) {
+        WinMsg msg = g_msgq[g_msgq_tail % MSGQ_CAP];
+        ReleaseSRWLockExclusive(&g_msgq_lock);
+        dispatch_winmsg(msg.m, msg.w, msg.l);
+        AcquireSRWLockExclusive(&g_msgq_lock);
+        g_msgq_tail++;
+        WakeAllConditionVariable(&g_msgq_done);
+    }
+    ReleaseSRWLockExclusive(&g_msgq_lock);
+}
+
+static uint64_t msgq_push(UINT m, WPARAM w, LPARAM l) {
+    AcquireSRWLockExclusive(&g_msgq_lock);
+    while (g_msgq_head - g_msgq_tail >= MSGQ_CAP) SleepConditionVariableSRW(&g_msgq_done, &g_msgq_lock, INFINITE, 0);
+    g_msgq[g_msgq_head % MSGQ_CAP] = (WinMsg){m, w, l};
+    uint64_t ticket = ++g_msgq_head;
+    ReleaseSRWLockExclusive(&g_msgq_lock);
+    return ticket;
+}
+
+BOOL PostMessageW(HWND h, UINT m, WPARAM w, LPARAM l) {
+    if (!h || h != window_hwnd()) return FALSE;
+    msgq_push(m, w, l);
+    return TRUE;
+}
+
+LRESULT SendMessageW(HWND h, UINT m, WPARAM w, LPARAM l) {
+    if (!h || h != window_hwnd()) return 0;
+    if (GetCurrentThreadId() == g_window_tid) {
+        dispatch_winmsg(m, w, l);
+        return 0;
+    }
+    uint64_t ticket = msgq_push(m, w, l);
+    AcquireSRWLockExclusive(&g_msgq_lock);
+    while (g_msgq_tail < ticket) SleepConditionVariableSRW(&g_msgq_done, &g_msgq_lock, INFINITE, 0);
+    ReleaseSRWLockExclusive(&g_msgq_lock);
+    return 0;
+}
+
+// Cursor capture (input_win.c cursor_update): SDL relative mouse mode hides the cursor, keeps it in the window and
+// reports motion past the window edge. SDL wants it set on the window thread, so other threads leave the request here.
+static volatile LONG g_capture_want, g_capture_have;
+
+void gfx_window_capture_mouse(int on) { InterlockedExchange(&g_capture_want, on != 0); }
+
+static void capture_apply(void) {
+    LONG want = g_capture_want;
+    if (!g_window || want == g_capture_have) return;
+    if (!SDL_SetWindowRelativeMouseMode(g_window, want != 0))
+        rt_log("gfx: SDL_SetWindowRelativeMouseMode(%ld) failed (%s)", (long)want, SDL_GetError());
+    g_capture_have = want;
+}
+
 static SDL_Window *sdl_event_window(const SDL_Event *ev) {
     if (ev->type >= SDL_EVENT_WINDOW_FIRST && ev->type <= SDL_EVENT_WINDOW_LAST)
         return SDL_GetWindowFromID(ev->window.windowID);
@@ -474,6 +558,12 @@ static void handle_sdl_event(SDL_Event *ev) {
         break;
     }
     case SDL_EVENT_MOUSE_MOTION: {
+        // Relative motion in fractions of a pixel: the remainder carries to the next event, as raw input counts do.
+        static float rem_x, rem_y;
+        float fx = ev->motion.xrel + rem_x, fy = ev->motion.yrel + rem_y;
+        int dx = (int)fx, dy = (int)fy;
+        rem_x = fx - (float)dx, rem_y = fy - (float)dy;
+        if (dx || dy) input_mouse_raw(dx, dy);
         int ix = (int)ev->motion.x, iy = (int)ev->motion.y;
         dispatch_winmsg(WM_MOUSEMOVE, 0, (LPARAM)((iy << 16) | (ix & 0xffff)));
         break;
@@ -489,6 +579,9 @@ static void handle_sdl_event(SDL_Event *ev) {
             m = ev->type == SDL_EVENT_MOUSE_BUTTON_DOWN ? WM_RBUTTONDOWN : WM_RBUTTONUP;
         else if (ev->button.button == SDL_BUTTON_MIDDLE)
             m = ev->type == SDL_EVENT_MOUSE_BUTTON_DOWN ? WM_MBUTTONDOWN : WM_MBUTTONUP;
+        else if (ev->button.button == SDL_BUTTON_X1 || ev->button.button == SDL_BUTTON_X2)
+            os_key_state(ev->button.button == SDL_BUTTON_X1 ? VK_XBUTTON1 : VK_XBUTTON2,
+                         ev->type == SDL_EVENT_MOUSE_BUTTON_DOWN);
         if (m) dispatch_winmsg(m, 0, lp);
         break;
     }
@@ -502,6 +595,7 @@ static void handle_sdl_event(SDL_Event *ev) {
 
 static DWORD WINAPI window_main(void *arg) {
     (void)arg;
+    g_window_tid = GetCurrentThreadId();
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         rt_log("gfx: SDL_Init VIDEO failed (%s)", SDL_GetError());
         g_wnd_failed = 1;
@@ -531,8 +625,10 @@ static DWORD WINAPI window_main(void *arg) {
             InterlockedExchange(&g_settings_pending, 0);
             dispatch_winmsg(WM_APP_SETTINGS, 0, 0);
         }
+        msgq_drain();
         SDL_Event ev;
         while (SDL_PollEvent(&ev)) handle_sdl_event(&ev);
+        capture_apply();
         SDL_Delay(1);
     }
     return 0;

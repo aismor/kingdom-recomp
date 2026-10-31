@@ -39,6 +39,7 @@ while not (ROOT / 'tools' / 'shader_census.py').is_file() and ROOT != ROOT.paren
     ROOT = ROOT.parent
 sys.path.insert(0, str(ROOT / 'tools'))
 import shader_list  # noqa: E402
+from host_platform import EXE_NAME  # noqa: E402
 from shader_census import inventory  # noqa: E402
 
 STAGES = {'vs': 0, 'ps': 4, 'cs': 5}                       # runtime/gfx.h GFX_STAGE_*
@@ -175,7 +176,7 @@ def main():
           f'seed written in {time.monotonic() - t0:.1f} s', flush=True)
     if a.no_run:
         return 0
-    exe = out / 'totk.exe'
+    exe = out / EXE_NAME
     r = subprocess.run([str(exe), '--prepare-shaders'], cwd=str(out))
     print(f'totk.exe --prepare-shaders: rc={r.returncode}; total {time.monotonic() - t0:.1f} s')
     return r.returncode

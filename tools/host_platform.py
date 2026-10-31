@@ -55,16 +55,16 @@ def pkg_config_flags(*names):
 
 
 def linux_link_libs():
-    _, libs = pkg_config_flags('sdl3', 'vulkan', 'libvpx', 'libopus', 'libzstd')
+    _, libs = pkg_config_flags('sdl3', 'vulkan', 'vpx', 'opus', 'libzstd')
     if not libs:
         libs = ['-lSDL3', '-lvulkan', '-lvpx', '-lopus', '-lzstd']
-    libs += ['-lpthread', '-ldl', '-lm']
+    libs += ['-lstdc++', '-lpthread', '-ldl', '-lm']   # libstdc++: Dear ImGui (C++)
     return libs
 
 
 def linux_rt_skip():
     """Runtime sources replaced or omitted on Linux."""
-    return {'prof_win.c', 'rdoc_win.c', 'swkbd_win.c', 'gfx_window.c', 'menu_win.cpp'}
+    return {'prof_win.c', 'rdoc_win.c', 'swkbd_win.c', 'gfx_window.c'}
 
 
 def linux_rt_extra():

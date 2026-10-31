@@ -14,11 +14,22 @@
 #define MAX_HOSTFN 4096   // dispatch.c holds HOST_CAP / 2 host functions
 #define MAX_ADDED 64
 
+#ifdef _WIN32
 // PE/COFF: the linker sorts .ovr$a < .ovr$m (entries, host.h) < .ovr$z by the text after '$'.
 __attribute__((section(".ovr$a"), used)) static const RtHostEntry ovr_start[1];
 __attribute__((section(".ovr$z"), used)) static const RtHostEntry ovr_stop[1];
 __attribute__((section(".obs$a"), used)) static const RtHostEntry obs_start[1];
 __attribute__((section(".obs$z"), used)) static const RtHostEntry obs_stop[1];
+#else
+// ELF: the linker defines __start_<section> and __stop_<section> around rt_ovr and rt_obs (host.h); weak, so a build
+// without entries of one kind links with an empty table.
+extern const RtHostEntry __start_rt_ovr[] __attribute__((weak)), __stop_rt_ovr[] __attribute__((weak));
+extern const RtHostEntry __start_rt_obs[] __attribute__((weak)), __stop_rt_obs[] __attribute__((weak));
+#define ovr_start __start_rt_ovr
+#define ovr_stop __stop_rt_ovr
+#define obs_start __start_rt_obs
+#define obs_stop __stop_rt_obs
+#endif
 
 typedef struct {
     const char *name;

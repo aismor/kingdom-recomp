@@ -46,18 +46,20 @@ static int create_instance(void) {
     const char *ext[4] = {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WIN32_SURFACE_EXTENSION_NAME};
     uint32_t n_ext = 2;
 #else
+    // Every window-system surface the loader offers, by name: the VK_USE_PLATFORM_* headers stay out, and SDL picks
+    // Wayland or X11 at run time.
+    static const char *const window_ext[] = {"VK_KHR_wayland_surface", "VK_KHR_xlib_surface", "VK_KHR_xcb_surface"};
     const char *ext[8];
     uint32_t n_ext = 0;
     ext[n_ext++] = VK_KHR_SURFACE_EXTENSION_NAME;
-#if defined(VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME)
-    ext[n_ext++] = VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME;
-#endif
-#if defined(VK_KHR_XLIB_SURFACE_EXTENSION_NAME)
-    ext[n_ext++] = VK_KHR_XLIB_SURFACE_EXTENSION_NAME;
-#endif
-#if defined(VK_KHR_XCB_SURFACE_EXTENSION_NAME)
-    ext[n_ext++] = VK_KHR_XCB_SURFACE_EXTENSION_NAME;
-#endif
+    uint32_t n_have = 0;
+    vkEnumerateInstanceExtensionProperties(NULL, &n_have, NULL);
+    VkExtensionProperties *have = calloc(n_have ? n_have : 1, sizeof *have);
+    if (have) vkEnumerateInstanceExtensionProperties(NULL, &n_have, have);
+    else n_have = 0;
+    for (size_t i = 0; i < sizeof window_ext / sizeof *window_ext; i++)
+        if (has_ext(have, n_have, window_ext[i])) ext[n_ext++] = window_ext[i];
+    free(have);
 #endif
     const char *layers[] = {"VK_LAYER_KHRONOS_validation"};
     int validate = cfg_bool("TOTK_VK_VALIDATION");

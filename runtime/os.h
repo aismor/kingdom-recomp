@@ -41,6 +41,7 @@ typedef int64_t LONGLONG;
 typedef uint32_t ULONG;
 typedef uint16_t WORD;
 typedef uint64_t ULONG_PTR;
+typedef uint64_t DWORD_PTR;
 typedef uint64_t SIZE_T;
 typedef uint32_t UINT;
 typedef uint64_t WPARAM;
@@ -93,8 +94,11 @@ typedef struct { WORD wYear, wMonth, wDayOfWeek, wDay, wHour, wMinute, wSecond, 
 #define ERROR_SUCCESS 0
 #define ERROR_TIMEOUT 1460
 #define ERROR_INVALID_PARAMETER 87
+#define ERROR_NOT_ENOUGH_MEMORY 8
+#define ERROR_INVALID_ADDRESS 487
 #define ERROR_ALREADY_EXISTS 183
 #define ERROR_FILE_NOT_FOUND 2
+#define ERROR_NO_MORE_FILES 18
 #define ERROR_PATH_NOT_FOUND 3
 #define ERROR_ACCESS_DENIED 5
 #define ERROR_SHARING_VIOLATION 32
@@ -103,6 +107,7 @@ typedef struct { WORD wYear, wMonth, wDayOfWeek, wDay, wHour, wMinute, wSecond, 
 #define ERROR_FILE_EXISTS 80
 #define ERROR_NOACCESS 998
 #define ERROR_HANDLE_EOF 38
+#define ERROR_IO_PENDING 997
 
 #define MOVEFILE_REPLACE_EXISTING 1
 #define MOVEFILE_WRITE_THROUGH 8
@@ -134,7 +139,10 @@ typedef struct {
     FILETIME ftCreation, ftLastAccess, ftLastWriteTime;
     DWORD dwVolumeSerialNumber, nFileSizeHigh, nFileSizeLow, nNumberOfLinks, nFileIndexHigh, nFileIndexLow;
 } BY_HANDLE_FILE_INFORMATION;
+#define ftCreationTime ftCreation
+#define ftLastAccessTime ftLastAccess
 BOOL GetFileInformationByHandle(HANDLE h, BY_HANDLE_FILE_INFORMATION *info);
+BOOL GetOverlappedResult(HANDLE h, OVERLAPPED *ov, DWORD *got, BOOL wait);
 
 DWORD GetTempPathW(DWORD cap, LPWSTR out);
 DWORD GetTempPathA(DWORD cap, LPSTR out);
@@ -143,7 +151,7 @@ DWORD GetCurrentProcessId(void);
 void *_aligned_malloc(size_t size, size_t align);
 void _aligned_free(void *p);
 
-BOOL CreateHardLinkW(LPCWSTR target, LPCWSTR link, void *sec);
+BOOL CreateHardLinkW(LPCWSTR link, LPCWSTR existing, void *sec);
 void GetSystemTime(SYSTEMTIME *st);
 
 #define CP_UTF8 65001
@@ -159,6 +167,7 @@ void GetSystemTime(SYSTEMTIME *st);
 #define FILE_FLAG_SEQUENTIAL_SCAN 0x08000000
 #define FILE_FLAG_BACKUP_SEMANTICS 0x02000000
 #define FILE_FLAG_NO_BUFFERING 0x20000000
+#define FILE_FLAG_OVERLAPPED 0x40000000
 #define FILE_ATTRIBUTE_TEMPORARY 0x00000100
 
 #define FILE_ATTRIBUTE_REPARSE_POINT 0x400
@@ -213,6 +222,8 @@ typedef struct {
 #define STARTF_USESTDHANDLES 0x00000100
 #define HANDLE_FLAG_INHERIT 0x00000001
 #define STD_INPUT_HANDLE ((DWORD)-10)
+#define STD_OUTPUT_HANDLE ((DWORD)-11)
+#define STD_ERROR_HANDLE ((DWORD)-12)
 
 #define MAPVK_VK_TO_CHAR 2
 
@@ -425,11 +436,41 @@ static inline void AcquireSRWLockShared(SRWLOCK *l) { plat_mutex_lock(l); }
 static inline void ReleaseSRWLockShared(SRWLOCK *l) { plat_mutex_unlock(l); }
 static inline int TryAcquireSRWLockExclusive(SRWLOCK *l) { return plat_mutex_trylock(l); }
 
-typedef PlatMutex CRITICAL_SECTION;
-static inline void InitializeCriticalSection(CRITICAL_SECTION *l) { plat_mutex_init(l); }
-static inline void EnterCriticalSection(CRITICAL_SECTION *l) { plat_mutex_lock(l); }
-static inline BOOL TryEnterCriticalSection(CRITICAL_SECTION *l) { return plat_mutex_trylock(l) ? TRUE : FALSE; }
-static inline void LeaveCriticalSection(CRITICAL_SECTION *l) { plat_mutex_unlock(l); }
+// A Win32 critical section is recursive: its owner may enter it again (vk_memory.c vk_staging runs inside
+// vk_upload_begin's hold of cmd_lock). All-zero is an unowned section.
+typedef struct {
+    PlatMutex m;
+    DWORD owner;   // thread id of the holder, 0 when free
+    int depth;
+} CRITICAL_SECTION;
+DWORD GetCurrentThreadId(void);
+static inline void InitializeCriticalSection(CRITICAL_SECTION *l) {
+    plat_mutex_init(&l->m);
+    l->owner = 0;
+    l->depth = 0;
+}
+static inline void EnterCriticalSection(CRITICAL_SECTION *l) {
+    DWORD me = GetCurrentThreadId();
+    if (__atomic_load_n(&l->owner, __ATOMIC_RELAXED) != me) {
+        plat_mutex_lock(&l->m);
+        __atomic_store_n(&l->owner, me, __ATOMIC_RELAXED);
+    }
+    l->depth++;
+}
+static inline BOOL TryEnterCriticalSection(CRITICAL_SECTION *l) {
+    DWORD me = GetCurrentThreadId();
+    if (__atomic_load_n(&l->owner, __ATOMIC_RELAXED) != me) {
+        if (!plat_mutex_trylock(&l->m)) return FALSE;
+        __atomic_store_n(&l->owner, me, __ATOMIC_RELAXED);
+    }
+    l->depth++;
+    return TRUE;
+}
+static inline void LeaveCriticalSection(CRITICAL_SECTION *l) {
+    if (--l->depth) return;
+    __atomic_store_n(&l->owner, 0, __ATOMIC_RELAXED);
+    plat_mutex_unlock(&l->m);
+}
 static inline void DeleteCriticalSection(CRITICAL_SECTION *l) { (void)l; }
 
 typedef PlatCond CONDITION_VARIABLE;
@@ -612,6 +653,34 @@ errno_t localtime_s(struct tm *tm, const time_t *t);
 
 int _fseeki64(FILE *f, int64_t off, int whence);
 int64_t _ftelli64(FILE *f);
+FILE *_wfopen(const wchar_t *path, const wchar_t *mode);
+
+#define FILE_MAP_READ 0x0004
+HANDLE CreateFileMappingW(HANDLE file, void *sec, DWORD prot, DWORD size_hi, DWORD size_lo, LPCWSTR name);
+void *MapViewOfFile(HANDLE map, DWORD access, DWORD off_hi, DWORD off_lo, SIZE_T n);
+BOOL UnmapViewOfFile(const void *view);
+
+// Runtime paths use Windows '\' separators (os_linux.c path_wide_to_utf8); these turn them into '/' for the kernel.
+void os_host_path(const char *in, char *out, size_t cap);
+FILE *os_fopen(const char *path, const char *mode);
+int os_remove(const char *path);
+#if !defined(__cplusplus) && !defined(OS_LINUX_IMPL)
+#define fopen(path, mode) os_fopen(path, mode)
+#define remove(path) os_remove(path)
+#endif
+
+// Write watch maps unwritten pages read-only (os_linux.c); before a host-pointer import they become writable.
+void os_prepare_host_import(const void *p, size_t n);
+
+// Message parameter macros of windowsx.h / winuser.h for the synthetic messages of gfx_window_sdl.c (ui/menu_win.cpp).
+#define WHEEL_DELTA 120
+#define GET_X_LPARAM(lp) ((int)(short)((lp) & 0xffff))
+#define GET_Y_LPARAM(lp) ((int)(short)(((lp) >> 16) & 0xffff))
+#define GET_WHEEL_DELTA_WPARAM(w) ((short)((w) >> 16))
+
+// GetAsyncKeyState and GetForegroundWindow read what the SDL window reports here (gfx_window_sdl.c).
+void os_key_state(int vk, int down);
+void os_foreground(HWND h);
 
 struct SDL_Window;
 typedef struct SDL_Window SDL_Window;

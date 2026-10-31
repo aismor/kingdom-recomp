@@ -81,7 +81,8 @@ SDL3_DLLS = [UCRT / 'SDL3.dll', UCRT / 'libiconv-2.dll', UCRT / 'libopus-0.dll']
 GEN_FLAGS = ['-O1', '-fno-strict-aliasing', '-Wno-return-type', '-Wno-unused-label', '-fvisibility=hidden',
              '-march=x86-64-v3']
 RT_FLAGS = ['-O2', '-g', '-Wall', '-fno-strict-aliasing', '-march=x86-64-v3']
-LINK_FLAGS = ['-fuse-ld=lld', '-Wl,--stack,16777216', '"-Wl,--Map=$builddir/totk.map"']   # the map feeds tools/prof_report.py
+# The map feeds tools/prof_report.py. --stack is a PE option; an ELF main thread gets its stack from the rlimit.
+LINK_FLAGS = ['-fuse-ld=lld', *(['-Wl,--stack,16777216'] if IS_WINDOWS else []), '"-Wl,--Map=$builddir/totk.map"']
 LINK_LIBS = ['-lpsapi', '-lbcrypt', '-lvulkan-1', '-luser32', '-lgdi32', '-ldwmapi', '-lwinmm', '-lSDL3', '-lopus', '-l:libvpx.a', '-l:libzstd.a', '-l:libstdc++.a', '-l:libwinpthread.a']   # Vulkan back end; libvpx static (movies); libzstd static (resolution.c)
 VMA_INCLUDE = UCRT.parent / 'include' / 'vma'   # vk_mem_alloc.h; MSYS2 package vulkan-memory-allocator
 # --toolchain: an llvm-mingw tree. The libraries, headers and DLLs MSYS2 supplies come from the deps directory instead.

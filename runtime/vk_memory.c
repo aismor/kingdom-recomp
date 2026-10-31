@@ -147,6 +147,9 @@ static int import_pool(VkCtx *c, PoolRec *r, uint64_t addr, uint64_t size) {
         r->buf = VK_NULL_HANDLE;
         return 0;
     }
+#ifndef _WIN32
+    os_prepare_host_import((const void *)(uintptr_t)r->import_lo, n);
+#endif
     VkImportMemoryHostPointerInfoEXT im = {.sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_HOST_POINTER_INFO_EXT,
                                            .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT,
                                            .pHostPointer = (void *)(uintptr_t)r->import_lo};

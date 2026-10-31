@@ -315,14 +315,18 @@ static float mouse_sens_get(void) {
 }
 
 // Hide the cursor and confine it to the client area while the window is focused...
-#ifndef _WIN32
-static void cursor_update(HWND h) { (void)h; }
-#else
 static void cursor_update(HWND h) {
     const char *in = cfg_get("TOTK_INPUT");
     AcquireSRWLockExclusive(&cur_lock);
     int want = h && cur_active && !(cur_rel & CUR_REL) && !cur_suspend && g_block != 1 && g_menu != 1 && mouse_sens_get() > 0 &&
-               !(in && !strcmp(in, "none")) && GetForegroundWindow() == h && !IsIconic(h);
+               !(in && !strcmp(in, "none")) && !IsIconic(h);
+#ifndef _WIN32
+    // cur_active follows the SDL focus events (WM_ACTIVATEAPP), which stand in for GetForegroundWindow.
+    if (want && !cur_captured) { InterlockedExchange(&mouse_dx, 0); InterlockedExchange(&mouse_dy, 0); }
+    InterlockedExchange(&cur_captured, want);
+    gfx_window_capture_mouse(want);
+#else
+    want = want && GetForegroundWindow() == h;
     RECT r;
     POINT tl = {0, 0};
     if (want && GetClientRect(h, &r) && ClientToScreen(h, &tl)) {
@@ -334,7 +338,15 @@ static void cursor_update(HWND h) {
         if (cur_captured) ClipCursor(NULL);
         InterlockedExchange(&cur_captured, 0);
     }
+#endif
     ReleaseSRWLockExclusive(&cur_lock);
+}
+
+#ifndef _WIN32
+void input_mouse_raw(int dx, int dy) {
+    if (!cur_captured) return;
+    InterlockedAdd(&mouse_dx, dx);
+    InterlockedAdd(&mouse_dy, dy);
 }
 #endif
 
@@ -348,14 +360,10 @@ void input_cursor_suspend(int on) {
 // Window procedure hook (gfx_window.c / gfx_window_sdl.c).
 int input_window_msg(HWND h, UINT m, WPARAM w, LPARAM l, LRESULT *res) {
 #ifndef _WIN32
-    (void)h;
-    (void)m;
-    (void)w;
-    (void)l;
     (void)res;
-    return 0;
-#else
+#endif
     switch (m) {
+#ifdef _WIN32
     case WM_CREATE: {
         RAWINPUTDEVICE rid = {.usUsagePage = 1, .usUsage = 2, .dwFlags = 0, .hwndTarget = h};   // generic mouse
         if (!RegisterRawInputDevices(&rid, 1, sizeof rid)) rt_log("input: raw mouse registration failed (%lu)", GetLastError());
@@ -377,6 +385,7 @@ int input_window_msg(HWND h, UINT m, WPARAM w, LPARAM l, LRESULT *res) {
     case WM_SYSCOMMAND:   // Alt pressed alone would enter the window menu loop, which stalls the game: Alt is a game key
         if ((w & 0xFFF0) == SC_KEYMENU && l == 0) { *res = 0; return 1; }
         break;
+#endif
     case WM_KEYDOWN:   // Esc is unbound in the game layout: it releases the cursor and opens the menu (menu_window_msg)
         if (w == VK_ESCAPE && !(cur_rel & CUR_REL)) { cur_rel_update(rel_esc); cursor_update(h); }
         break;
@@ -406,7 +415,6 @@ int input_window_msg(HWND h, UINT m, WPARAM w, LPARAM l, LRESULT *res) {
         break;
     }
     return 0;
-#endif
 }
 
 static int key_down(int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; }
@@ -519,6 +527,9 @@ static void start(void) {
     binds_refresh();
     const char *e = cfg_get("TOTK_INPUT");
     if (e && !strcmp(e, "none")) { state = -1; rt_log("input: disabled (TOTK_INPUT=none)"); return; }
+    // Where SDL also runs the window (gfx_window_sdl.c), it drops gamepad input while it thinks no window of ours has
+    // focus; the game reads the pad regardless of focus, as the Win32 build (no SDL video) does.
+    SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
     if (!SDL_Init(SDL_INIT_GAMEPAD)) { state = -1; rt_log("input: SDL gamepad init failed (%s), keyboard only", SDL_GetError()); }
     else state = 1;
     if (state == 1) {

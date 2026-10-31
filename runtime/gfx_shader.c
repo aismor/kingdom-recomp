@@ -926,13 +926,24 @@ static void build_key(const uint8_t code_hash[32], const GfxShaderAnswers *a, co
     rt_sha256(buf, (size_t)(p - buf), key);
 }
 
+// A path for the translator: our paths keep '\' separators, which .NET reads as part of a name outside Windows.
+static void json_path(char **o, const char *path) {
+#ifdef _WIN32
+    json_esc(o, path);
+#else
+    char p[PATH_CAP + 80];
+    os_host_path(path, p, sizeof p);
+    json_esc(o, p);
+#endif
+}
+
 static size_t build_request(char *o0, const char *hex, const char *stage, const char *code_path, const uint8_t *c1,
                             uint32_t c1_len, const GfxShaderAnswers *a, const uint8_t *control) {
     char *o = o0;
     o += sprintf(o, "{\"job\":{\"key\":\"");
     json_esc(&o, hex);
     o += sprintf(o, "\",\"stage\":\"%s\",\"debug\":false,\"code\":\"", stage);
-    json_esc(&o, code_path);
+    json_path(&o, code_path);
     o += sprintf(o, "\",\"c1\":\"");
     for (uint32_t i = 0; i < c1_len; i++) o += sprintf(o, "%02x", c1[i]);
     o += sprintf(o, "\"");
@@ -973,7 +984,7 @@ static size_t build_request(char *o0, const char *hex, const char *stage, const 
     if (host_sbuf) o += sprintf(o, ",\"sbuf_align\":%u", host_sbuf);
     if (host_sg[si] != 32) o += sprintf(o, ",\"subgroup\":%u", host_sg[si]);
     o += sprintf(o, "},\"out\":\"");
-    json_esc(&o, cache_dir);
+    json_path(&o, cache_dir);
     o += sprintf(o, "\"}");
     return (size_t)(o - o0);
 }

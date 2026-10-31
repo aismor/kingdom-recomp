@@ -144,7 +144,8 @@ def main() -> None:
     dotnet = shutil.which("dotnet")
     if not dotnet:
         sys.exit("missing: dotnet (.NET 10 SDK)")
-    if not (VSWHERE_DIR / "vswhere.exe").is_file() and not shutil.which("vswhere"):
+    windows = sys.platform == "win32"
+    if windows and not (VSWHERE_DIR / "vswhere.exe").is_file() and not shutil.which("vswhere"):
         sys.exit(f"missing: vswhere.exe (expected in {VSWHERE_DIR}); NativeAOT cannot link without it")
     env = dict(os.environ)
     env["PATH"] = str(VSWHERE_DIR) + os.pathsep + env["PATH"]
@@ -159,13 +160,14 @@ def main() -> None:
     out = BUILD / "publish"
     shutil.rmtree(out, ignore_errors=True)
     cmd = [
-        dotnet, "publish", str(work / "totk_xlate.csproj"), "-c", "Release", "-r", "win-x64",
+        dotnet, "publish", str(work / "totk_xlate.csproj"), "-c", "Release", "-r", "win-x64" if windows else "linux-x64",
         "-p:PublishAot=true", "-p:InvariantGlobalization=true", f"-p:RyuSrc={src}", "-o", str(out),
     ]
     if subprocess.run(cmd, env=env).returncode != 0:
         sys.exit("dotnet publish failed")
+    # The Linux build keeps the .exe name: runtime/gfx_shader.c init_paths looks for totk_xlate.exe on both.
     exe = BUILD / "totk_xlate.exe"
-    shutil.copy2(out / "totk_xlate.exe", exe)
+    shutil.copy2(out / ("totk_xlate.exe" if windows else "totk_xlate"), exe)
     write_identity(exe)
     print(f"built {exe} ({exe.stat().st_size / 1e6:.1f} MB) in {time.time() - started:.0f} s")
 

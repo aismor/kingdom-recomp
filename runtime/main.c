@@ -144,8 +144,8 @@ static void parse_trace(void) {
     }
 }
 
-void rt_sha256(const void *p, size_t n, uint8_t out[32]) {
 #ifdef _WIN32
+void rt_sha256(const void *p, size_t n, uint8_t out[32]) {
     static BCRYPT_ALG_HANDLE alg;
     BCRYPT_ALG_HANDLE a = __atomic_load_n(&alg, __ATOMIC_ACQUIRE);
     if (!a) {
@@ -167,8 +167,8 @@ void rt_sha256(const void *p, size_t n, uint8_t out[32]) {
     }
     if (BCryptFinishHash(h, out, 32, 0)) rt_fatal("SHA-256: BCryptFinishHash failed");
     BCryptDestroyHash(h);
-#endif
 }
+#endif
 
 // ---- configuration
 static RtConfig cfg;

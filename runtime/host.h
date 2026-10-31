@@ -91,11 +91,20 @@ static inline void ret_d(Cpu *c, double d) { uint64_t b; memcpy(&b, &d, 8); c->v
 typedef struct { const char *name; GuestFn fn; } RtHostEntry;
 #define RT_CAT2(a, b) a##b
 #define RT_CAT(a, b) RT_CAT2(a, b)
-// File-scope declarations; fn must be declared before. The loader binds them by symbol name.
+// File-scope declarations; fn must be declared before. The loader binds them by symbol name. The entries gather in one
+// section per kind: a PE grouped section (hostfn.c brackets it), an ELF section named like a C identifier (the linker
+// brackets it with __start_ and __stop_ symbols).
+#ifdef _WIN32
+#define RT_OVR_SECTION ".ovr$m"
+#define RT_OBS_SECTION ".obs$m"
+#else
+#define RT_OVR_SECTION "rt_ovr"
+#define RT_OBS_SECTION "rt_obs"
+#endif
 #define HOST_OVERRIDE(sym, fn) /* replaces sym in every GOT/GLOB_DAT/ABS64 of every module */                  \
-    __attribute__((used, section(".ovr$m"))) static const RtHostEntry RT_CAT(rt_ovr_, __COUNTER__) = {sym, fn}
+    __attribute__((used, section(RT_OVR_SECTION))) static const RtHostEntry RT_CAT(rt_ovr_, __COUNTER__) = {sym, fn}
 #define HOST_OBSERVER(sym, fn) /* JUMP_SLOT only; fn calls rt_original(c) */                                    \
-    __attribute__((used, section(".obs$m"))) static const RtHostEntry RT_CAT(rt_obs_, __COUNTER__) = {sym, fn}
+    __attribute__((used, section(RT_OBS_SECTION))) static const RtHostEntry RT_CAT(rt_obs_, __COUNTER__) = {sym, fn}
 uint64_t hostfn_register(const char *name, GuestFn fn);    // synthetic address; before hostfn_seal only. The same
                                                            // (name, fn) pair returns the same address
 GuestFn hostfn_override(const char *name);                 // NULL if none

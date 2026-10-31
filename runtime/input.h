@@ -44,6 +44,13 @@ uint32_t input_key_char(int key);
 
 // Mouse camera and cursor (input_win.c, gfx_window_sdl.c). input_cursor_suspend releases the cursor around F11 resize.
 void input_cursor_suspend(int on);
+#ifndef _WIN32
+// The SDL window's stand-ins for raw input and ClipCursor. input_mouse_raw: relative motion from the window thread,
+// counted only while the cursor is captured. gfx_window_capture_mouse: SDL relative mouse mode on or off; any thread,
+// the window thread applies it.
+void input_mouse_raw(int dx, int dy);
+void gfx_window_capture_mouse(int on);
+#endif
 
 // Rumble: SDL_RumbleGamepad on the open gamepad, low (heavy, left) and high (light, right) motor 0..65535 for ms
 // milliseconds. 1 if a gamepad with rumble took it. Callable from any thread.

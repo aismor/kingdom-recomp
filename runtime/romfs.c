@@ -120,6 +120,7 @@ static void hex32(const uint8_t d[32], char out[65]) {
 }
 
 static void sha_range(HANDLE f, uint64_t offset, uint64_t size, char hex[65], int progress) {
+#ifdef _WIN32
     BCRYPT_ALG_HANDLE alg;
     BCRYPT_HASH_HANDLE h;
     need(!BCryptOpenAlgorithmProvider(&alg, BCRYPT_SHA256_ALGORITHM, NULL, 0) &&
@@ -143,6 +144,36 @@ static void sha_range(HANDLE f, uint64_t offset, uint64_t size, char hex[65], in
     BCryptCloseAlgorithmProvider(alg, 0);
     free(buf);
     hex32(d, hex);
+#else
+    typedef struct {
+        uint32_t st[8];
+        uint64_t total;
+        uint8_t buf[64];
+        size_t buf_n;
+    } RtSha256Ctx;
+    void rt_sha256_begin(RtSha256Ctx *);
+    void rt_sha256_feed(RtSha256Ctx *, const void *, size_t);
+    void rt_sha256_end(RtSha256Ctx *, uint8_t out[32]);
+    RtSha256Ctx ctx;
+    rt_sha256_begin(&ctx);
+    uint8_t *buf = malloc(HASH_CHUNK);
+    need(buf != NULL, "hash buffer");
+    double t0 = now_s();
+    for (uint64_t done = 0; done < size;) {
+        uint32_t want = size - done > HASH_CHUNK ? HASH_CHUNK : (uint32_t)(size - done);
+        int64_t n = read_at(f, buf, want, offset + done);
+        need(n > 0, "read of hash input");
+        rt_sha256_feed(&ctx, buf, (size_t)n);
+        done += (uint64_t)n;
+        if (progress && (done % (2ull << 30) < (uint64_t)n || done == size))
+            rt_log("RomFS: hashed %.1f of %.1f GiB (%.0f MiB/s)", done / 1073741824.0, size / 1073741824.0,
+                   done / 1048576.0 / (now_s() - t0 + 1e-9));
+    }
+    free(buf);
+    uint8_t d[32];
+    rt_sha256_end(&ctx, d);
+    hex32(d, hex);
+#endif
 }
 
 // ---- full image verification with a proof file

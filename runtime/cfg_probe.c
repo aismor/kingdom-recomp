@@ -18,7 +18,8 @@ static int fails;
 int probe_cfg(void) {
     char path[1024];
     if (!plat_exe_path(path, sizeof path)) return 1;
-    char *cut = strrchr(path, '\\');
+    char *cut = strrchr(path, '\\'), *cut2 = strrchr(path, '/');
+    if (cut2 > cut) cut = cut2;
     if (!cut) return 1;
     strcpy(cut + 1, "cfg-probe.ini");
     static const char ini[] =
@@ -201,7 +202,9 @@ int probe_cfg(void) {
     cfg_set("TOTK_VOLUME", "20");
     char bad[1100];
     snprintf(bad, sizeof bad, "%s", path);
-    strcpy(strrchr(bad, '\\') + 1, "no-such-dir\\cfg-probe.ini");
+    char *sep = strrchr(bad, '\\');
+    if (!sep) sep = strrchr(bad, '/');
+    sprintf(sep + 1, "no-such-dir%ccfg-probe.ini", *sep);
     CHECK(cfg_save_to(bad) == 0 && cfg_last_save_ok() == 0 && EQ(cfg_get("TOTK_VOLUME"), "20"),
           "save status: an unwritable path fails, the value stays");
     cfg_set("TOTK_VOLUME", "21");
