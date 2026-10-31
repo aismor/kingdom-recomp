@@ -24,6 +24,43 @@
 #include <sys/random.h>
 #include <ucontext.h>
 
+// The kernel write watch (ww_kernel_*) needs Linux 6.7 UAPI. The AppImage builds against the Steam Runtime's 5.10
+// headers, which lack it: the values below are the kernel's (include/uapi/linux/fs.h and userfaultfd.h). An older
+// running kernel refuses the features at UFFDIO_API, and the region falls back to the software write watch.
+#ifndef PAGEMAP_SCAN
+struct page_region {
+    __u64 start;
+    __u64 end;
+    __u64 categories;
+};
+struct pm_scan_arg {
+    __u64 size;
+    __u64 flags;
+    __u64 start;
+    __u64 end;
+    __u64 walk_end;
+    __u64 vec;
+    __u64 vec_len;
+    __u64 max_pages;
+    __u64 category_inverted;
+    __u64 category_mask;
+    __u64 category_anyof_mask;
+    __u64 return_mask;
+};
+#define PAGEMAP_SCAN _IOWR('f', 16, struct pm_scan_arg)
+#define PAGE_IS_WRITTEN (1 << 1)
+#define PM_SCAN_WP_MATCHING (1 << 0)
+#endif
+#ifndef UFFD_FEATURE_WP_UNPOPULATED
+#define UFFD_FEATURE_WP_UNPOPULATED (1 << 13)
+#endif
+#ifndef UFFD_FEATURE_WP_ASYNC
+#define UFFD_FEATURE_WP_ASYNC (1 << 15)
+#endif
+#ifndef UFFD_USER_MODE_ONLY
+#define UFFD_USER_MODE_ONLY 1
+#endif
+
 
 #define MOVEFILE_REPLACE_EXISTING 1
 #define MOVEFILE_WRITE_THROUGH 8

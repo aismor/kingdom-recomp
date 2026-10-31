@@ -52,6 +52,9 @@ MSYS2 = 'https://repo.msys2.org/mingw/ucrt64/'
 SDL_VERSION = '3.4.18'
 LLVM_VERSION = '20261020'
 MNG_COMMIT = 'b75be8cfa704df3701e86130c8ced268e79d6b11'   # MacNativeGames, the shader list (refs/MacNativeGames)
+# A MacNativeGames checkout with the history up to MNG_COMMIT (shader_list.history walks it): --mng names another one
+# when refs/ holds a shallow clone
+MNG_REPO = MAIN_ROOT / 'refs' / 'MacNativeGames'
 # name: (url, sha256)
 PINS = {
     'python-embed': ('https://www.python.org/ftp/python/3.14.9/python-3.14.9-embed-amd64.zip',
@@ -97,8 +100,8 @@ LLVM_SKIP_DIRS = {'aarch64-w64-mingw32', 'armv7-w64-mingw32', 'i686-w64-mingw32'
 LLVM_SKIP_SUFFIXES = {'.idl', '.tlb'}
 
 # tools/ files the installer steps run (and what they import), copied from the repo.
-TOOLS_FILES = ['build_game.py', 'build_shaders.py', 'check_content.py', 'extract.py', 'make_romfs_patches.py',
-               'prepare_shaders.py', 'romfs_index.py', 'shader_census.py', 'shader_list.py']
+TOOLS_FILES = ['build_game.py', 'build_shaders.py', 'check_content.py', 'extract.py', 'host_platform.py',
+               'make_romfs_patches.py', 'prepare_shaders.py', 'romfs_index.py', 'shader_census.py', 'shader_list.py']
 TOOLS_DIRS = ['vendor/macnativegames', 'data']   # data/: expected hashes
 RUNTIME_SUFFIXES = {'.h', '.inc', '.ico'}   # .ico: the installer window icon
 
@@ -328,12 +331,25 @@ def collect_licenses(out):
 
 # ---- runtime/, recomp/, tools/, data/ ---------------------------------------------------------------------------------
 
+def runtime_gen():
+    """The generated C the runtime library builds against: generated/v121, else v143, else none (a CI runner without
+    the game). The library reads only what every layout.h shares (MOD_MAIN_BASE in runtime/frame_rate.c), which
+    build_game.py's stub layout.h (write_runtime_lib_layout_stub) carries too."""
+    for version in ('v121', 'v143'):
+        if (MAIN_ROOT / 'generated' / version / 'layout.json').is_file():
+            return MAIN_ROOT / 'generated' / version
+    empty = MAIN_ROOT / 'build' / 'release-check' / 'no-gen'
+    empty.mkdir(parents=True, exist_ok=True)
+    print(f'runtime library: no generated C, the stub layout.h of build_game.py ({empty})')
+    return empty
+
+
 def runtime_lib(out, llvm):
     """Build libtotkrt.a with the folder's llvm/ and copy it, the headers and the install-side sources into runtime/."""
     build = MAIN_ROOT / 'build' / 'release-check' / 'rtlib'
-    gen = MAIN_ROOT / 'generated' / 'v121'
+    shutil.rmtree(build, ignore_errors=True)
     run([sys.executable, ROOT / 'tools' / 'build_game.py', '--make-runtime-lib', '--toolchain', llvm,
-         '--deps', out / 'runtime' / 'deps', '--ninja', out / 'bin' / 'ninja.exe', '--gen', gen, '--out', build],
+         '--deps', out / 'runtime' / 'deps', '--ninja', out / 'bin' / 'ninja.exe', '--gen', runtime_gen(), '--out', build],
         env=clean_env(llvm / 'bin', out / 'bin'))
     rt = out / 'runtime'
     shutil.copy2(build / 'libtotkrt.a', rt / 'libtotkrt.a')
@@ -353,7 +369,7 @@ def build_sources(out):
     for d in TOOLS_DIRS:
         copy_tree(ROOT / 'tools' / d, out / 'tools' / d, lambda r: '__pycache__' in r or r.endswith('.md'))
     (out / 'data').mkdir(exist_ok=True)
-    text = shader_list.history(MAIN_ROOT / 'refs' / 'MacNativeGames', MNG_COMMIT)
+    text = shader_list.history(MNG_REPO, MNG_COMMIT)
     (out / 'data' / 'shader_list.tsv').write_text(text, encoding='utf-8', newline='\n')
     copy_tree(ROOT / 'installer', out / 'installer', lambda r: '__pycache__' in r or r.startswith('launcher/'))
     shutil.copy2(ROOT / 'totk.ini.example', out / 'totk.ini.example')
@@ -423,11 +439,14 @@ def check_folder(out):
     print(f'check_content: {sum(1 for p in out.rglob("*") if p.is_file())} files, no hit')
 
 
-def check_bundle(out):
-    """The folder's own python runs the installer without game files and the window's selftest."""
+def check_bundle(out, no_gpu=False):
+    """The folder's own python runs the installer without game files and the window's selftest. no_gpu: a machine
+    without Vulkan (a CI runner) skips the installer's host probe (installer/steps.py HOST_CHECKED)."""
     chk = MAIN_ROOT / 'build' / 'release-check' / 'bundle'
     shutil.rmtree(chk, ignore_errors=True)
     env = clean_env(out / 'python')
+    if no_gpu:
+        env['KINGDOM_HOST_CHECKED'] = '1'
     py = out / 'python' / 'python.exe'
     r = subprocess.run([py, '-m', 'installer', '--lang', 'en-US', '--dest', chk / 'install', '--temp', chk / 'temp'],
                        cwd=out, env=env, capture_output=True, text=True, timeout=600)
@@ -495,6 +514,7 @@ def main():
     ap.add_argument('--out', type=Path, required=True, help='release folder (replaced)')
     ap.add_argument('--zip', type=Path, help='also write the folder as this zip')
     ap.add_argument('--prove', action='store_true', help='only run the compile-and-probe check on an existing folder')
+    ap.add_argument('--no-gpu', action='store_true', help='the bundle check skips the Vulkan probe (CI runners)')
     args = ap.parse_args()
     out = args.out.resolve()
     if args.prove:
@@ -512,7 +532,7 @@ def main():
     build_launcher(out, llvm)
     collect_licenses(out)
     check_folder(out)
-    check_bundle(out)
+    check_bundle(out, args.no_gpu)
     sizes(out)
     if args.zip:
         write_zip(out, args.zip.resolve())

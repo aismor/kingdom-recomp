@@ -15,6 +15,11 @@ Release (docs/installer.md "Release layout"), root = the unpacked folder:
     VERSION                 the release version, one line
     temp/                   the default temp folder (created)
 
+Linux release (the AppImage's folder, tools/make_release_linux.py): python/bin/python3 (python-build-standalone, with
+tkinter), llvm/ with clang, lld and llvm-ar plus llvm/sysroot (the glibc headers and libraries the game links against),
+runtime/deps/ with the Vulkan headers, VMA and a static zstd, bin/ with hactool, ninja, totk_xlate.exe (a Linux binary)
+and libSDL3.so.0. No temp/: the install folder's .setup-temp holds the temp files.
+
 Dev mode, root = a repository checkout (no python/python.exe): build/py314-embed/py/python.exe (the embeddable
 Python the release ships, with the same packages), else this Python; toolchain/llvm-mingw-*/ and toolchain/deps-mingw;
 runtime/ as the sources with build/install-rtlib/libtotkrt.a (tools/build_game.py --make-runtime-lib --out
@@ -61,6 +66,7 @@ class Layout:
     shader_list: Path | None = None   # None: dev, read from refs/MacNativeGames through git
     ini_example: Path | None = None
     temp: Path | None = None
+    sysroot: Path | None = None   # Linux release: the glibc the game compiles and links against, instead of the host's
 
     @property
     def clang(self):
@@ -84,26 +90,37 @@ class Layout:
             need.append(self.runtime_lib)
         if self.shader_list:
             need.append(self.shader_list)
+        if self.sysroot:
+            need.append(self.sysroot)
         return [str(p) for p in need if not p.exists()]
 
 
+def release_python(root):
+    return root / 'python' / ('python.exe' if os.name == 'nt' else 'bin/python3')
+
+
 def is_release(root):
-    return (root / 'python' / ('python' + EXE)).is_file()
+    return release_python(root).is_file()
 
 
 def release_layout(root):
     version = root / 'VERSION'
+    win = os.name == 'nt'
     return Layout(
         root=root, dev=False,
         release=version.read_text(encoding='utf-8').strip() if version.is_file() else 'unknown',
-        python=root / 'python' / ('python' + EXE),
+        python=release_python(root),
         tools=root / 'tools', recomp=root / 'recomp',
         llvm=root / 'llvm', deps=root / 'runtime' / 'deps', runtime=root / 'runtime',
         runtime_lib=root / 'runtime' / 'libtotkrt.a',
         ninja=root / 'bin' / ('ninja' + EXE), hactool=root / 'bin' / ('hactool' + EXE),
-        xlate=root / 'bin' / ('totk_xlate' + EXE),
-        dlls=(root / 'bin' / 'SDL3.dll', root / 'bin' / 'libopus-0.dll'),
-        shader_list=root / 'data' / 'shader_list.tsv', ini_example=root / 'totk.ini.example', temp=root / 'temp')
+        # The Linux translator keeps the .exe name: runtime/gfx_shader.c init_paths looks for totk_xlate.exe on both.
+        xlate=root / 'bin' / 'totk_xlate.exe',
+        dlls=(root / 'bin' / 'SDL3.dll', root / 'bin' / 'libopus-0.dll') if win else (root / 'bin' / 'libSDL3.so.0',),
+        shader_list=root / 'data' / 'shader_list.tsv', ini_example=root / 'totk.ini.example',
+        # Linux: None, the install folder's .setup-temp (installer/cli.py): the AppImage is mounted read-only
+        temp=root / 'temp' if win else None,
+        sysroot=None if win else root / 'llvm' / 'sysroot')
 
 
 def linux_dev_layout(root, release):

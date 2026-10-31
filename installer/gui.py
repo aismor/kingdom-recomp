@@ -60,8 +60,12 @@ class App:
 
         root.title(self.cat('ui.title'))
         icon = layout.runtime / 'totk.ico'
+        png = layout.runtime / 'totk.png'   # Tk loads no .ico off Windows; the Linux release converts it
         if os.name == 'nt' and icon.is_file():
             root.iconbitmap(default=str(icon))
+        elif png.is_file():
+            self.icon = tk.PhotoImage(file=str(png))
+            root.iconphoto(True, self.icon)
         root.protocol('WM_DELETE_WINDOW', self.on_close)
         style = ttk.Style(root)
         style.configure('Title.TLabel', font=('Segoe UI', 15, 'bold'))

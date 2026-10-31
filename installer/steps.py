@@ -216,7 +216,8 @@ class Check(Step):
             raise InstallError('check.release_incomplete', paths=missing[:5])
         if dest.exists() and not dest.is_dir():
             raise InstallError('check.dest_not_folder', path=str(dest))
-        if ctx.mode == 'install' and dest.is_dir() and any(dest.iterdir()):
+        own = (ctx.temp, *ctx.temp.parents)   # a temp folder inside the install folder (installer/cli.py) is ours
+        if ctx.mode == 'install' and dest.is_dir() and any(p not in own for p in dest.iterdir()):
             raise InstallError('check.dest_not_empty', path=str(dest))
         lang = ctx.options.lang or ctx.state.get('lang')
         if not lang:
@@ -260,6 +261,8 @@ class Check(Step):
         work.mkdir(parents=True, exist_ok=True)
         exe = work / ('hostcheck' + EXE)
         command = [str(layout.clang), '-O1', str(HOSTCHECK), '-I', str(layout.deps / 'include'), '-o', str(exe)]
+        if layout.sysroot:
+            command += ['--target=x86_64-linux-gnu', f'--sysroot={layout.sysroot}', '-fuse-ld=lld']
         if os.name != 'nt':
             command.append('-ldl')
         r = subprocess.run(command, capture_output=True, text=True, errors='replace')
@@ -602,10 +605,10 @@ class Compile(Step):
         layout = ctx.layout
         clang = subprocess.run([str(layout.clang), '--version'], capture_output=True, text=True).stdout
         tools = [layout.tools / n for n in ('build_game.py', 'romfs_index.py', 'check_content.py')]
-        # On Linux deps is /usr: its path stands for the libraries of the container image, not its whole tree.
-        deps = layout.deps if os.name == 'nt' else str(layout.deps)
+        # Linux dev: deps is /usr, whose path stands for the libraries of the container image, not its whole tree.
+        deps = layout.deps if layout.runtime_lib else str(layout.deps)
         return fingerprint('compile-1', ctx.keys['lift'], layout.runtime, layout.runtime_lib or 'no-runtime-lib', deps,
-                           *tools, clang, *[d.name for d in layout.dlls])
+                           str(layout.sysroot or 'host'), *tools, clang, *[d.name for d in layout.dlls])
 
     def current(self, ctx, record):
         exe = ctx.dest / ('totk' + EXE)
@@ -629,8 +632,11 @@ class Compile(Step):
                 rep.progress('compile', 'link', force=True)
 
         rep.progress('compile', 'compile', force=True)
-        # Linux: build_game.py takes clang, the libraries and VMA from the system and compiles runtime/.
-        toolchain = ['--toolchain', layout.llvm, '--deps', layout.deps] if os.name == 'nt' else []
+        # Linux dev: build_game.py takes clang, the libraries and VMA from the system and compiles runtime/. The Linux
+        # release passes its LLVM, deps and sysroot like the Windows one its llvm-mingw.
+        toolchain = ['--toolchain', layout.llvm, '--deps', layout.deps] if layout.runtime_lib else []
+        if layout.sysroot:
+            toolchain += ['--sysroot', layout.sysroot]
         runtime_lib = ['--runtime-lib', layout.runtime_lib] if layout.runtime_lib else []
         code, log = run_tool(ctx, 'compile', layout.tools / 'build_game.py', [
             '--gen', ctx.temp / 'gen', '--out', build, *toolchain,

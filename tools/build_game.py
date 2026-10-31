@@ -42,6 +42,11 @@ from MSYS2. The libraries and headers MSYS2 supplies (Vulkan, SDL3, Opus, libvpx
 (default toolchain/deps-mingw: include/, lib/ with the import libraries and libvpx.a, bin/ with the DLLs), and the C++
 runtime is libc++ from llvm-mingw. Such a build never reuses another build's generated objects.
 
+On Linux the clang, ninja and libraries of the system build build/<version>/totk. The AppImage's setup
+(tools/make_release_linux.py) passes --toolchain (an LLVM tree), --sysroot (the Steam Runtime's glibc) and --deps
+(Vulkan headers, VMA, a static zstd): Opus, libvpx, zstd and libstdc++ are then linked in statically and the
+executable finds the libSDL3.so.0 beside it (rpath $ORIGIN).
+
 Split build. --make-runtime-lib compiles only runtime/ into <out>/libtotkrt.a (what CI prebuilds). --runtime-lib PATH
 then compiles only the generated C and the install-time files (modules.c and INSTALL_SIDE, which bake the player's
 game hashes and version in) and links them with that library. The library holds no game-derived data.
@@ -81,6 +86,10 @@ SDL3_DLLS = [UCRT / 'SDL3.dll', UCRT / 'libiconv-2.dll', UCRT / 'libopus-0.dll']
 GEN_FLAGS = ['-O1', '-fno-strict-aliasing', '-Wno-return-type', '-Wno-unused-label', '-fvisibility=hidden',
              '-march=x86-64-v3']
 RT_FLAGS = ['-O2', '-g', '-Wall', '-fno-strict-aliasing', '-march=x86-64-v3']
+if not IS_WINDOWS:
+    # The runtime passes volatile long counters to the Interlocked* of runtime/os.h, which take LONG (32 bits on Linux).
+    # Newer clang (the AppImage's LLVM) makes that mismatch an error; older clang and gcc only warn.
+    RT_FLAGS.append('-Wno-error=incompatible-pointer-types')
 # The map feeds tools/prof_report.py. --stack is a PE option; an ELF main thread gets its stack from the rlimit.
 LINK_FLAGS = ['-fuse-ld=lld', *(['-Wl,--stack,16777216'] if IS_WINDOWS else []), '"-Wl,--Map=$builddir/totk.map"']
 LINK_LIBS = ['-lpsapi', '-lbcrypt', '-lvulkan-1', '-luser32', '-lgdi32', '-ldwmapi', '-lwinmm', '-lSDL3', '-lopus', '-l:libvpx.a', '-l:libzstd.a', '-l:libstdc++.a', '-l:libwinpthread.a']   # Vulkan back end; libvpx static (movies); libzstd static (resolution.c)
@@ -88,6 +97,10 @@ VMA_INCLUDE = UCRT.parent / 'include' / 'vma'   # vk_mem_alloc.h; MSYS2 package 
 # --toolchain: an llvm-mingw tree. The libraries, headers and DLLs MSYS2 supplies come from the deps directory instead.
 LLVM_LINK_LIBS = ['-lpsapi', '-lbcrypt', '-luser32', '-lgdi32', '-ldwmapi', '-lwinmm', '-lvulkan-1', '-lSDL3', '-lopus',
                   '-l:libvpx.a', '-l:libzstd.a', '-l:libc++.a', '-l:libc++abi.a', '-l:libunwind.a', '-l:libwinpthread.a']
+# Linux with --deps (the AppImage, tools/make_release_linux.py): Opus, libvpx, zstd and libstdc++ go into the executable,
+# which then needs only glibc, the system's Vulkan loader and the libSDL3.so.0 beside it (rpath $ORIGIN).
+LINUX_DEPS_LINK_LIBS = ['-lvulkan', '-lSDL3', '-l:libopus.a', '-l:libvpx.a', '-l:libzstd.a', '-l:libstdc++.a', '-lm',
+                        '-lpthread', '-ldl']
 DEFAULT_DEPS = ROOT / 'toolchain' / 'deps-mingw'
 # Runtime sources compiled per install, not in the library: romfs.c includes romfs_config.h, patches.c and ov_zstd.c
 # the patches.h of the player's game version (its patch page is the page after that version's main; ov_zstd.c's host
@@ -303,7 +316,10 @@ def ninja_file(gen, out, mods, pool_depth, skip=(), prebuilt=False, runtime_lib=
     rt_inc = f'{inc} -I {cmd_path(out)} -I {vma} -I {imgui}'   # romfs_config.h, vk_mem_alloc.h (+ deps headers), imgui.h
     if rt_pkg_inc:
         rt_inc += ' ' + ' '.join(rt_pkg_inc)
-    libs = [f'-L {cmd_path(DEPS / "lib")}'] + LLVM_LINK_LIBS if DEPS else (LINK_LIBS if IS_WINDOWS else linux_link_libs())
+    if DEPS:
+        libs = [f'-L {cmd_path(DEPS / "lib")}'] + (LLVM_LINK_LIBS if IS_WINDOWS else LINUX_DEPS_LINK_LIBS)
+    else:
+        libs = LINK_LIBS if IS_WINDOWS else linux_link_libs()
     lines = [
         '# Written by tools/build_game.py; do not edit.',
         'ninja_required_version = 1.10',
@@ -682,11 +698,15 @@ def main():
                                                  "build/profile-<version> otherwise, so trying another version leaves "
                                                  "the main profile alone; saves load on 1.2.1 and 1.4.3 alike)")
     ap.add_argument('--toolchain', type=Path, help='llvm-mingw directory (with bin/clang.exe) to build with instead of '
-                                                   'MSYS2 UCRT64 clang')
+                                                   'MSYS2 UCRT64 clang; on Linux an LLVM directory (bin/clang, '
+                                                   'bin/llvm-ar) instead of the clang on PATH')
+    ap.add_argument('--sysroot', type=Path, help="Linux: the glibc headers and libraries to compile and link against "
+                                                 "instead of the host's (the AppImage's llvm/sysroot)")
     ap.add_argument('--ninja', type=Path, help='ninja.exe to build with (default: MSYS2 UCRT64, else bin/ninja.exe of the '
                                                'release folder)')
     ap.add_argument('--deps', type=Path, help=f'with --toolchain: include/, lib/ and bin/ of Vulkan, SDL3, Opus, libvpx '
-                                              f'and VMA (default {DEFAULT_DEPS.relative_to(ROOT).as_posix()})')
+                                              f'and VMA (default {DEFAULT_DEPS.relative_to(ROOT).as_posix()}); on Linux '
+                                              f'include/ and lib/ beside the sysroot\'s (Vulkan headers, VMA, zstd)')
     ap.add_argument('--make-runtime-lib', action='store_true',
                     help=f'build only <out>/{LIB_NAME} from runtime/ (no generated C, no totk.exe)')
     ap.add_argument('--runtime-lib', type=Path, help=f'link against this {LIB_NAME} instead of compiling runtime/ '
@@ -736,11 +756,22 @@ def main():
     dlls = SDL3_DLLS
     if args.toolchain:
         TOOLCHAIN_BIN = (args.toolchain / 'bin').resolve()
-        CLANG = TOOLCHAIN_BIN / 'clang.exe'
-        AR = TOOLCHAIN_BIN / 'llvm-ar.exe'
+        suffix = '.exe' if IS_WINDOWS else ''
+        CLANG = TOOLCHAIN_BIN / f'clang{suffix}'
+        AR = TOOLCHAIN_BIN / f'llvm-ar{suffix}'
         WINDRES = TOOLCHAIN_BIN / 'llvm-windres.exe'
-        DEPS = (args.deps or DEFAULT_DEPS).resolve()
-        dlls = sorted((DEPS / 'bin').glob('*.dll'))
+        if IS_WINDOWS or args.deps:   # Linux: --deps only when given, never deps-mingw
+            DEPS = (args.deps or DEFAULT_DEPS).resolve()
+        dlls = sorted((DEPS / 'bin').glob('*.dll')) if IS_WINDOWS else []
+    if not IS_WINDOWS:
+        if args.sysroot:
+            # Every compile and the link: the game then needs no newer glibc than the sysroot's (the Steam Runtime's)
+            sysroot = ['--target=x86_64-linux-gnu', f'--sysroot={cmd_path(args.sysroot.resolve())}']
+            GEN_FLAGS[:0] = sysroot
+            RT_FLAGS[:0] = sysroot
+            LINK_FLAGS[:0] = sysroot
+        if DEPS:
+            LINK_FLAGS.append("'-Wl,-rpath,$$ORIGIN'")   # a libSDL3.so.0 beside totk before the system's
     for tool in (CLANG, NINJA):
         if not tool or not tool.is_file():
             hint = 'docs/building.md' if IS_WINDOWS else 'install clang and ninja (Fedora: dnf install clang lld ninja SDL3-devel vulkan-devel...)'

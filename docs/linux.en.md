@@ -22,6 +22,17 @@ For project architecture, see [architecture.md](architecture.md). Extraction flo
 
 Optional: [uv](https://docs.astral.sh/uv/) to create Python environments (same as [building.md](building.md)).
 
+## AppImage (release)
+
+The [releases](https://github.com/aismor/kingdom-recomp/releases) page has `Kingdom-Setup-<version>-x86_64.AppImage`: the same installer window with Python, LLVM and the Steam Runtime sysroot inside, no podman and no development packages. The system needs glibc 2.34 or newer (Fedora 35+, Ubuntu 22.04+, Debian 12, SteamOS 3) and a driver with Vulkan 1.3.
+
+```bash
+chmod +x Kingdom-Setup-*-x86_64.AppImage
+./Kingdom-Setup-*-x86_64.AppImage
+```
+
+The built game carries `libSDL3.so.0` beside it and links Opus, libvpx and zstd statically: only the Vulkan loader comes from the system. The temp folder is `.setup-temp` inside the install folder; at the end only the install logs remain there. To build the AppImage: `python tools/make_release_linux.py --out build/release/Kingdom-Setup-linux --appimage build/release/Kingdom-Setup-x86_64.AppImage` (the `.github/workflows/release.yml` workflow does it, and the Windows zip, on every `v*` tag).
+
 ## Installer (easy path)
 
 `kingdom-setup.sh` opens the same window as the Windows `TotK-Setup.exe`: pick the base game, the update, `prod.keys`, the language and the install folder, and it extracts, generates the C, compiles and prepares the shaders. The whole toolchain (clang, Python 3.14, .NET 10, VMA) lives in a podman container (`tools/linux/Containerfile`); the system needs only:
