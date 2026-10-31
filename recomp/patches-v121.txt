@@ -14,6 +14,44 @@ set infstamina TOTK_INF_STAMINA  0
 # Infinite stamina while sprinting or climbing (bad1dea / Eden 1.2.1 pchtxt, main+0x9f1dc4): fmov s0, #10.0.
 site infstamina main 9f1dc4 1e212841 1e204041
 
+# Built-in gameplay mods (bad1dea / Eden 1.2.1 exefs patches, verified against decompressed main).
+set infhorse   TOTK_INF_HORSE_STAMINA 0
+site infhorse main 1cada90 71000508 7100011f
+
+set superjump  TOTK_SUPER_JUMP 0
+site superjump main 107ea8c 1e281c21 1e209001
+
+set freeshop   TOTK_FREE_SHOP 0
+site freeshop main 1e8b2a0 5a980716 1a9813f6
+
+set infarrows  TOTK_INF_ARROWS 0
+site infarrows main 15d66c0 12800001 2a1f03e1
+
+set infdur     TOTK_INF_DURABILITY 0
+site infdur main 1b73a14 1b09a148 1b09a3e8
+site infdur main 836440 b9400901 b9401911 b9000901
+site infdur main 835f58 b9400901 b9401911 b9000901
+
+set infzonai   TOTK_INF_ZONAI 0
+site infzonai main 1a6949c 12800001 2a1f03e1
+
+set infood     TOTK_INF_FOOD 0
+site infood main 1a6d2c0 12800001 2a1f03e1
+
+set pick8      TOTK_PICKUP_8X 0
+site pick8 main 162a408 52800021 52800101
+
+set infoodbuff TOTK_INF_FOOD_BUFF 0
+site infoodbuff main 9e3b7c bd415e80 1e201980
+
+set infhealth  TOTK_INF_HEALTH 0
+# Eden code cave: refill [x0,#8] from [x0,#0x18], then the original vtable load (must not zero x8).
+site infhealth main 64c008 f9400008 b9401808 b9000808 f9400008
+
+set infbat     TOTK_INF_BATTERY 0
+site infbat main b96074 bd004668 bd004669
+site infbat main b960ec bd004668 bd004669
+
 # 60 fps: the adaptive present-interval controller (main+0x8f26c8, 1.0.0 0x8f6bec) gets the minimum interval 1.
 site fps60 main 8f273c 6b08015f 7100055f   # clamp: cmp w10, #1 (was cmp w10, w8 = minimum)
 site fps60 main 8f2740 1a89b10a 1a9fa52a   # clamp: csinc w10, w9, wzr, ge (desired = max(desired, 1))
