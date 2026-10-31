@@ -17,6 +17,7 @@ Report problems as issues, following [CONTRIBUTING.md](CONTRIBUTING.md).
 
 - Native code, not emulation
 - Game updates 1.2.1 and 1.4.3, with saves that carry over between them
+- **Brazilian Portuguese (0.2.3+):** installer and in-game menu in Portuguese; official in-game text and subtitles with **update 1.4.3** and `lang = pt-BR` ([docs/linux.pt.md](docs/linux.pt.md))
 - 60 fps by default; up to 144 fps or the monitor's refresh rate (experimental)
 - Custom resolutions (1080p, 2k...), supersampling and AMD FSR 1 upscaling
 - In-game settings menu (F1) and performance overlay (F10)

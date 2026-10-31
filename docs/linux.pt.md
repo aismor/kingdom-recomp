@@ -24,9 +24,11 @@ Opcional: [uv](https://docs.astral.sh/uv/) para criar os ambientes Python (como 
 
 ## Idioma português (Brasil)
 
+Desde a release **0.2.3-aismor**, a localização **oficial** pt-BR (interface, diálogos escritos e legendas) foi validada com dados na atualização **1.4.3**. Use base + update **1.4.3** (ou XCI que já inclua essa atualização), não apenas a 1.2.1.
+
 **Instalador e menu do Recomp:** com o sistema em português (ou `LANG=pt_BR.UTF-8`), a janela do instalador abre em português. No menu do jogo (F1), em **Menu → Idioma do menu**, dá para fixar português ou deixar **Automático (do sistema)**.
 
-**Legendas e texto do jogo (localização oficial):** na instalação, escolha **Português (Brasil)** como idioma do jogo. O instalador grava `lang = pt-BR` no `totk.ini` e o jogo lê os arquivos de idioma do RomFS que **vieram da sua extração** (base + atualização). Isso cobre interface, diálogos escritos e legendas em português; a **voz** continua a da localização original da Nintendo (não há dublagem pt-BR oficial completa como nos mods comunitários). Use uma atualização que traga o pacote pt-BR no RomFS (em geral **1.4.3**; na **1.2.1** o suporte pode ser inexistente ou incompleto — se o texto continuar em inglês, confira a versão da sua cópia).
+**Legendas e texto do jogo (localização oficial):** na instalação, escolha **Português (Brasil)** como idioma do jogo. O instalador grava `lang = pt-BR` no `totk.ini` e o jogo lê os arquivos de idioma do RomFS que **vieram da sua extração** (base + atualização). Isso cobre interface, diálogos escritos e legendas em português; a **voz** continua a da localização original da Nintendo (não há dublagem pt-BR oficial completa como nos mods comunitários).
 
 Depois da instalação, confira em `totk.ini`:
 

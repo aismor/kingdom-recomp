@@ -24,9 +24,11 @@ Optional: [uv](https://docs.astral.sh/uv/) to create Python environments (same a
 
 ## Portuguese (Brazil)
 
+From release **0.2.3-aismor**, official **pt-BR** in-game text and subtitles are supported with game data at update **1.4.3** (base + 1.4.3 update NSP, or a combined XCI). Do not rely on 1.2.1 alone for Portuguese.
+
 **Installer and Recomp menu:** with a Portuguese system locale (`LANG=pt_BR.UTF-8`), the setup window opens in Portuguese. In the in-game menu (F1), use **Menu → Menu language** for Portuguese or **Automatic (from system)**.
 
-**Subtitles and in-game text (official localization):** during install, choose **Portuguese (Brazil)** as the game language. The installer writes `lang = pt-BR` in `totk.ini`; the game reads language files from **your** extracted RomFS. That covers UI, written dialogue and subtitles in Portuguese. **Voice** stays Nintendo’s original localization (not community dubbing). Prefer an update that includes the pt-BR language pack in RomFS (typically **1.4.3**; **1.2.1** may lack or limit pt-BR).
+**Subtitles and in-game text (official localization):** during install, choose **Portuguese (Brazil)** as the game language. The installer writes `lang = pt-BR` in `totk.ini`; the game reads language files from **your** extracted RomFS. That covers UI, written dialogue and subtitles in Portuguese. **Voice** stays Nintendo’s original localization (not community dubbing).
 
 ## AppImage (release)
 

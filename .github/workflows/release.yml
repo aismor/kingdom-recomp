@@ -1,6 +1,6 @@
 name: Release
 
-# A tag v<VERSION> (v0.2.2-aismor) builds both setups, which carry a toolchain and no game data
+# A tag v<VERSION> (v0.2.3-aismor) builds both setups, which carry a toolchain and no game data
 # (tools/make_release.py, tools/make_release_linux.py), and publishes them as the tag's GitHub release.
 on:
   push:
@@ -91,6 +91,7 @@ jobs:
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -98,5 +99,6 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           name: Kingdom Recomp ${{ needs.version.outputs.version }}
+          body_path: docs/releases/v${{ needs.version.outputs.version }}.md
           prerelease: false
           files: dist/*
