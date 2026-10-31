@@ -23,9 +23,20 @@ Report problems as issues, following [CONTRIBUTING.md](CONTRIBUTING.md).
 - Keyboard, mouse and gamepad with remapping, rumble and gyro
 - Shaders prepared at install instead of during play
 
+## Linux (native build)
+
+Experimental native Linux support is available on forks/branches that include the Linux host port (SDL3 + Vulkan, no Wine).
+
+| Language | Guide |
+|----------|--------|
+| English | [docs/linux.en.md](docs/linux.en.md) |
+| Português | [docs/linux.pt.md](docs/linux.pt.md) |
+
+Run the game from `build/<ver>/` with **`TOTK_ASYNC_PREEMPT=0 ./totk`**. Settings: `build/<ver>/totk.ini`. Saves: `build/profile/` (v121).
+
 ## Planned
 
-- Linux and the Steam Deck
+- Linux and the Steam Deck (upstream merge of native host support)
 - Mods made for emulators: unpack a mod into a `mods` folder
 - Custom aspect ratios, including ultrawide
 - VRR
