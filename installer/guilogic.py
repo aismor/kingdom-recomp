@@ -25,11 +25,24 @@ from . import state as statefile
 from .events import for_platform, render
 
 TEXT = Path(__file__).resolve().parent / 'text'
-UI_LANGUAGES = ('en', 'ru')
+UI_LANGUAGES = ('en', 'ru', 'pt')
 STEP_ORDER = ('check', 'extract', 'lift', 'compile', 'prepare', 'cleanup')
 # message parameter -> catalog id prefix of the names that replace its raw values
 PARAM_NAMES = {'lang': 'lang.', 'known': 'lang.', 'step': 'step.', 'input': 'param.input.'}
 LANG_RU = 0x19   # primary language id of Russian in a Windows LANGID
+LANG_PT = 0x16   # primary language id of Portuguese in a Windows LANGID
+
+
+def ui_lang_from_locale(locale):
+    """Map a BCP-47-ish locale string to an installer UI language code."""
+    if not locale:
+        return 'en'
+    low = locale.lower().replace('_', '-')
+    if low.startswith('ru'):
+        return 'ru'
+    if low.startswith('pt'):
+        return 'pt'
+    return 'en'
 
 
 def load_texts(lang):
@@ -77,20 +90,29 @@ def flat(value):
 
 
 def windows_ui_language():
-    """'ru' when the Windows display language is Russian, else 'en'. Elsewhere the locale of LC_ALL, LC_MESSAGES or LANG
-    decides the same way."""
+    """'ru' or 'pt' when the system UI language matches; else 'en'. On Windows uses GetUserDefaultUILanguage;
+    elsewhere LC_ALL, LC_MESSAGES or LANG."""
     if os.name != 'nt':
         locale = os.environ.get('LC_ALL') or os.environ.get('LC_MESSAGES') or os.environ.get('LANG') or ''
-        return 'ru' if locale.startswith('ru') else 'en'
+        return ui_lang_from_locale(locale)
     try:
         langid = ctypes.windll.kernel32.GetUserDefaultUILanguage()
     except (AttributeError, OSError):
         return 'en'
-    return 'ru' if langid & 0x3ff == LANG_RU else 'en'
+    prim = langid & 0x3ff
+    if prim == LANG_RU:
+        return 'ru'
+    if prim == LANG_PT:
+        return 'pt'
+    return 'en'
 
 
 def default_game_language(ui):
-    return 'ru' if ui == 'ru' else 'en-US'
+    if ui == 'ru':
+        return 'ru'
+    if ui == 'pt':
+        return 'pt-BR'
+    return 'en-US'
 
 
 def gib(n):

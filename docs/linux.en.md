@@ -22,6 +22,12 @@ For project architecture, see [architecture.md](architecture.md). Extraction flo
 
 Optional: [uv](https://docs.astral.sh/uv/) to create Python environments (same as [building.md](building.md)).
 
+## Portuguese (Brazil)
+
+**Installer and Recomp menu:** with a Portuguese system locale (`LANG=pt_BR.UTF-8`), the setup window opens in Portuguese. In the in-game menu (F1), use **Menu → Menu language** for Portuguese or **Automatic (from system)**.
+
+**Subtitles and in-game text (official localization):** during install, choose **Portuguese (Brazil)** as the game language. The installer writes `lang = pt-BR` in `totk.ini`; the game reads language files from **your** extracted RomFS. That covers UI, written dialogue and subtitles in Portuguese. **Voice** stays Nintendo’s original localization (not community dubbing). Prefer an update that includes the pt-BR language pack in RomFS (typically **1.4.3**; **1.2.1** may lack or limit pt-BR).
+
 ## AppImage (release)
 
 The [releases](https://github.com/aismor/kingdom-recomp/releases) page has `Kingdom-Setup-<version>-x86_64.AppImage`: the same installer window with Python, LLVM and the Steam Runtime sysroot inside, no podman and no development packages. The system needs glibc 2.34 or newer (Fedora 35+, Ubuntu 22.04+, Debian 12, SteamOS 3) and a driver with Vulkan 1.3.
