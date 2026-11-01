@@ -9,8 +9,10 @@ holds only the game; the installer and its tools stay outside it.
 1. Downloads `TotK-Setup-<version>-windows.zip` from GitHub Releases (none is published yet), unpacks it anywhere and
    starts `TotK-Setup.exe`.
 2. Picks:
-   - the base game (XCI or NSP) and the 1.2.1 or 1.4.3 update (NSP);
+   - the base game (XCI or NSP) and the 1.1.1, 1.2.1 or 1.4.3 update (NSP), or one XCI containing both;
    - their `prod.keys`;
+   - optionally the firmware folder (`system/Contents/registered` of an unpacked firmware or an emulator's install),
+     needed for Chinese, Korean and Traditional Chinese text;
    - the game language and the install folder.
 3. Waits for the setup, one time. The window shows each step and its progress.
 4. Plays `totk.exe` from the install folder. The installer and the source NSP or XCI can be deleted.
@@ -22,36 +24,50 @@ The install folder (`main.c` `portable_paths()` reads this layout; it stays port
   totk.exe, SDL3.dll, libopus-0.dll, totk_xlate.exe
   totk.ini                       language; the other keys as commented defaults (totk.ini.example)
   exefs/, romfs/                 extracted from the player's files
+  shared-fonts/                  the Switch system fonts, with Chinese, Korean or Traditional Chinese text
   profile/                       saves
   logs/                          totk.log of the last run, totk.1.log to totk.4.log of the runs before it
-  shader and pipeline caches     prepared by the setup
+  shader and pipeline caches     prepared by the setup; shader-cache/shader-cache.pack holds the translations
   totk-install.json              what built this folder: release version, input hashes, finished steps
 ```
 
 ## Updating the port
 
 The player runs a newer installer on the same folder. It reads `totk-install.json`, keeps `romfs/`, `exefs/`,
-`profile/` and `totk.ini` after checking their hashes, rebuilds `totk.exe` and re-prepares the shaders. A newer
-release that changes nothing game-derived skips the rebuild.
+`shared-fonts/`, `profile/` and `totk.ini` after checking their hashes, rebuilds `totk.exe` and re-prepares the
+shaders. A newer release that changes nothing game-derived skips the rebuild.
 
-Given another update file than the recorded one (1.2.1, then 1.4.3), the installer extracts and builds again from it and
-keeps `profile/`. Saves carry over both ways: 1.4.3 converts a 1.2.1 save on load, and 1.2.1 loads the saves 1.4.3 wrote.
+Given an update file other than the recorded one (1.1.1, then 1.2.1, then 1.4.3), the installer extracts and builds again from it
+and keeps `profile/`. Saves carry over both ways between 1.2.1 and 1.4.3: 1.4.3 converts a 1.2.1 save on load, and 1.2.1
+loads the saves 1.4.3 wrote.
 
 ## Setup steps
 
-1. **Check** before writing anything: the files open with the keys, the update is 1.2.1 or 1.4.3 (by hash, as
+1. **Check** before writing anything: the files open with the keys, the update is 1.1.1, 1.2.1 or 1.4.3 (by hash, as
    `tools/extract.py`), the keys are new enough for the update, enough space is free on the target disk (about 36 GiB at the peak of a
-   first install, 20 GiB after it), the CPU has
-   AVX2 (`-march=x86-64-v3`), a Vulkan 1.3 GPU exists. Each failure is one clear message.
-2. **Extract** ExeFS and RomFS into the install folder and verify the hashes.
-3. **Lift** the ExeFS to C (`recomp/gen.py`, `recomp/patches-v121.txt` or `patches-v143.txt`) into a temp folder next
+   first install, 20 GiB after it), the CPU is at least x86-64-v2 (SSE4.2; with AVX2/FMA the faster `v3` build is used,
+   otherwise the `v2` one), a Vulkan 1.3 GPU exists. Each failure is one clear message.
+2. **Fonts** with Chinese, Korean or Traditional Chinese text and a firmware folder: extract the Switch system fonts
+   from the firmware into `shared-fonts/` (MacNativeGames' `extract_shared_fonts.py`, which verifies every NCA layer
+   and BFTTF header). Without a firmware folder the setup warns and goes on; the game then lacks those glyphs.
+3. **Extract** ExeFS and RomFS into the install folder and verify the hashes.
+4. **Lift** the ExeFS to C (`recomp/gen.py`, `recomp/patches-v121.txt` or `patches-v143.txt`) into a temp folder next
    to the installer.
-4. **Compile** the generated C, `modules.c`, `romfs.c`, `patches.c` and `ov_zstd.c` (they bake the per-install layout, RomFS
+5. **Compile** the generated C, `modules.c`, `romfs.c`, `patches.c` and `ov_zstd.c` (they bake the per-install layout, RomFS
    hashes and the game version's patch page) and link
-   them with the prebuilt runtime library into `totk.exe` (`build_game.py --runtime-lib`; about 3 min on 24 cores).
-5. **Prepare** the RomFS patches and the shaders (`tools/make_romfs_patches.py`, `tools/prepare_shaders.py`,
-   `totk.exe --prepare-shaders`) in the install folder.
-6. **Clean up** the temp folder (generated C and objects, about 1.3 GB).
+   them with the prebuilt runtime library for the host's level (`libtotkrt.a` or `libtotkrt-v2.a`) into `totk.exe`
+   (`build_game.py --runtime-lib`; about 3 min on 24 cores).
+6. **Prepare** the RomFS patches and the shaders (`tools/make_romfs_patches.py`, `tools/prepare_shaders.py`,
+   `totk.exe --prepare-shaders`) in the install folder, then fold the shader cache's loose files (four per shader, about
+   117,000) into `shader-cache/shader-cache.pack` (`tools/pack_shader_cache.py`). totk.exe reads the pack first and
+   writes the translations it makes in play as loose files; running the tool again with the game closed folds those in.
+   The patches are written three times: `romfs-patches`, and `romfs-patches-xbox` and `romfs-patches-xbox-label`
+   (`--prompts`: Xbox button prompts for `prompts = xbox`, the first for `pad_layout = nintendo`, the second for `xbox`
+   and `auto`). The two Xbox folders are optional: when one cannot be made, the setup warns and finishes.
+   When the graphics driver crashes while building the shaders, `prepare_shaders.py` runs that part again without the
+   variants it was building ([building.md](building.md), step 6), and the setup finishes with a warning that names how
+   many were left out.
+7. **Clean up** the temp folder (generated C and objects, about 1.3 GB).
 
 A cancelled or failed setup resumes from the last finished step (`totk-install.json`).
 
@@ -60,10 +76,13 @@ A cancelled or failed setup resumes from the last finished step (`totk-install.j
 `installer/` (stdlib only; `installer/layout.py` maps the release folder and, in a repository, the dev toolchain):
 
 ```
-python -m installer --base FILE --update FILE --keys FILE --lang CODE --dest DIR [--root DIR] [--temp DIR] [--verify]
+python -m installer --base FILE --update FILE --keys FILE --lang CODE --dest DIR [--firmware DIR] [--root DIR] [--temp DIR] [--verify]
 ```
 
 - On a folder with `totk-install.json` only `--dest` is needed; the game files only when the extraction must run again.
+- `--firmware DIR` is the folder holding the firmware NCAs: an unpacked firmware, or the emulators' installed
+  `Contents/registered` (the parent `Contents` folder works too). It is read only with Chinese, Korean or Traditional
+  Chinese text, and only when `shared-fonts/` is not already in the install folder.
 - stdout: one JSON event per line, types `start`, `plan`, `step` (started, done, skipped), `progress` (step, phase,
   done/total/unit), `space` (bytes needed and free on the install disk and the temp disk), `warning`, `error`, `end` (`installer/events.py`). Messages are ids with parameters;
   `installer/text/en.json` holds their English text. The human-readable log goes to `<temp>/logs/`.
@@ -75,9 +94,13 @@ python -m installer --base FILE --update FILE --keys FILE --lang CODE --dest DIR
   the merged RomFS (15.9 GiB) before it deletes them. The check computes the exact figure.
 - Window (`python -m installer.gui`, `installer/gui.py` draws, `installer/guilogic.py` decides): form, step list with
   progress, space line, collapsible log, Cancel (Ctrl+Break to the CLI's process group, then it waits for the exit),
-  finish screen with Open folder. English or Russian, chosen from the Windows display language, switchable in the
-  window; every sentence is an id in `installer/text/<en|ru>.json`. A folder with `totk-install.json` needs only the
-  folder. `--selftest [--shots DIR]` builds every screen in both languages and closes itself.
+  finish screen with Open folder. English, Russian, Brazilian Portuguese or Simplified Chinese, chosen from the Windows
+  display language (zh-CN and zh-SG give Chinese; the Traditional Chinese regions give English), switchable in the
+  window; every sentence is an id in `installer/text/<en|ru|pt-BR|zh-Hans>.json`. A Chinese window still starts with
+  English as the game language, because Chinese game text needs the Switch shared fonts, which the setup extracts only
+  from a firmware folder. A folder with
+  `totk-install.json` needs only the folder. `--selftest [--shots DIR]` builds every screen in every language and
+  closes itself.
 - `tests/installer_gui_test.py`: event model, form, catalogs, cancel, the self-closing window and one end-to-end run
   of the CLI in `--verify` mode (needs `build/install-test` and `build/extracted/v121`; see its docstring).
 - `tests/installer_test.py`: bookkeeping with fake steps. `tests/installer_e2e.py`: a dev-mode run with the files of
@@ -89,11 +112,12 @@ The unpacked release; `tools/make_release.py` assembles it and `--zip` packs it:
 
 ```
 TotK-Setup.exe        starts python/pythonw.exe -m installer.gui (installer/launcher/launcher.c, no console)
-installer/            the installer: steps, CLI, window, en/ru text catalog
+installer/            the installer: steps, CLI, window, en/ru/zh-Hans text catalog
 python/               Python 3.14.9 embeddable + numpy, lz4, cryptography, cffi, pycparser (+ tkinter for the window)
 recomp/, tools/       the lifter and the build, extraction and shader scripts the steps run (copied from the repo)
 llvm/                 llvm-mingw, x86_64-only subset (Apache-2.0 with LLVM exception; mingw-w64 parts permissive)
-runtime/              libtotkrt.a and the headers the generated code and modules.c/romfs.c/patches.c include
+runtime/              libtotkrt.a, libtotkrt-v2.a and the headers the generated code and modules.c/romfs.c/patches.c
+                      include
 bin/                  totk_xlate.exe, hactool.exe, SDL3.dll, libopus-0.dll, ninja.exe
 data/                 shader_list.tsv (MacNativeGames, MIT)
 THIRD_PARTY_NOTICES.md
@@ -105,9 +129,57 @@ totk.ini.example, VERSION  the default ini; the release string (the repository's
 - The release contains nothing game-derived; `make_release.py` runs `tools/check_content.py` over the folder before it
   finishes.
 
+## Linux release
+
+`tools/make_release_linux.py` builds the same setup for Linux and packs it as `TotK-Setup-x86_64.AppImage` (the static
+type-2 runtime: no libfuse2 needed on the host). The player makes it executable and starts it; on a Steam Deck, from
+Desktop Mode. Building the release also needs `make` and `pkg-config`. The bundled Tcl/Tk 9.0.4 is rebuilt with
+Xft against the sniper sysroot so Russian text uses system TrueType fonts. The setup builds the game into the folder they pick, as on Windows, and the game is `totk` there with
+`libSDL3.so.0` beside it. The folder inside the AppImage:
+
+```
+AppRun                starts python/bin/python3 -m installer.gui (no bytecode written into the read-only mount)
+totk-setup.desktop, totk-setup.png
+installer/, recomp/, tools/, data/, licenses/, THIRD_PARTY_NOTICES.md, totk.ini.example, VERSION   as on Windows
+python/               python-build-standalone 3.14 (with tkinter) + the installer's packages; a .pth puts the folder,
+                      tools/ and recomp/ on sys.path
+llvm/                 LLVM 23 (clang, lld, llvm-ar) and llvm/sysroot: the files of the Steam Runtime 3 "sniper" SDK the
+                      game's compile and link read (about 130 files)
+runtime/              libtotkrt.a, libtotkrt-v2.a, headers, the install-side sources, totk.png; deps/ with the Vulkan
+                      headers, VMA and a static zstd
+bin/                  totk_xlate, hactool, ninja, libSDL3.so.0
+```
+
+- What we compile is built against the sniper sysroot (glibc 2.31): the game, hostcheck, hactool and the translator
+  need no newer glibc. The game links Opus, libvpx, zstd and libstdc++ statically and needs only glibc, the system's
+  Vulkan loader and the SDL3 beside it. The setup itself needs glibc 2.34 (Ubuntu 22.04, Debian 12, Fedora 35,
+  SteamOS 3): the official LLVM binaries and the `cryptography` wheel are built against it. `make_release_linux.py`
+  checks every ELF file in the folder against that floor (`check_glibc`), and the setup's check step stops with one
+  message on an older system.
+- The setup's temp folder is `.setup-temp` inside the install folder (`--temp` changes it): the AppImage is mounted
+  read-only, and a Steam Deck's `/home` is often too full for the generated C while the game goes to the SD card.
+- The game keeps Mesa's shader cache in `mesa-cache` beside `totk` unless `MESA_SHADER_CACHE_DIR` is set, for the
+  same reason: RADV fills its default folder in `~/.cache` up to 1 GB.
+- The window follows `LANG` for English, Brazilian Portuguese or Russian, cancels through SIGTERM to the CLI's process group (the CLI handles
+  it as Ctrl+Break on Windows) and opens the finished folder with `xdg-open`.
+- Requirements beyond Windows': Linux 6.7 or later (the write watch, `docs/building.md`) and glibc 2.34.
+- Building the release needs one game version extracted and lifted (`tools/extract.py`, `recomp/gen.py`, either
+  version): the runtime library includes the generated `layout.h`, whose shared part (`MOD_COUNT`, `MOD_MAIN_BASE`)
+  is the same for both. `tools/make_release.py` takes `generated/v121`, else `generated/v143`.
+
+### Running from a source checkout
+
+`./kingdom-setup.sh` uses Podman to keep Clang, Ninja, Python packages, .NET and development libraries in a Fedora
+build container. The host only needs Podman, Python 3, its Vulkan driver and the runtime libraries the installed game
+loads. CPU and Vulkan checks and shader preparation run on the host, where the GPU is available. Paths under the home
+directory and common removable-media mount points are mounted at the same location in the container.
+
+This container path is for development checkouts. A packaged AppImage remains self-contained and starts directly,
+without Podman.
+
 ## Constraints
 
-- The installer steps contain no Win32 calls: Linux follows with its own compiler and the same steps.
+- The installer steps contain no Win32 calls: Linux runs the same steps with its own compiler ("Linux release").
 - The keys file path is passed to the tools; key values never appear in the UI, logs or files.
 - The window is a front end over the CLI (`python -m installer --base ... --update ... --keys ... --lang ... --dest
   ...`), which prints one JSON progress event per line. Tests and CI use the CLI.
@@ -123,4 +195,4 @@ totk.ini.example, VERSION  the default ini; the release string (the repository's
 ## Later
 
 - Re-warm the driver cache on start after a move, GPU or driver change.
-- NSZ and XCZ input. Linux release.
+- NSZ and XCZ input.

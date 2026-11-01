@@ -23,9 +23,11 @@
 #include "host.h"
 #include "nvn_api.h"
 #include "nvn_tex.h"
+#include "platform/platform.h"
 #include "tex.h"
 #include "vk.h"
 #include "vk_exec.h"
+#include "vk_dlaa.h"
 
 #define WEAK __attribute__((weak))
 #define CALL_DEPTH 8
@@ -97,7 +99,7 @@ WEAK void vk_exec_op_xfer(VkExec *ex, uint32_t op, const void *payload) {
 enum { W_UNRENDERABLE, W_LEVEL, W_LAYER, W_VIEW_FORMAT, W_BLOCK_VIEW, W_BLOCK_LAYERS, W_CLEAR_TARGET, W_CLEAR_MASK, W_STENCIL_MASK, W_COUNT };
 
 static void warn_once(int key, const char *fmt, ...) {
-    static volatile long seen[W_COUNT];
+    static volatile int32_t seen[W_COUNT];
     if (__atomic_exchange_n(&seen[key], 1, __ATOMIC_RELAXED)) return;
     char msg[256];
     va_list ap;
@@ -141,11 +143,163 @@ static int view_format(const tex_t *t, const view_t *v, int blocks, VkFormat *ou
     return 1;
 }
 
+// ---- 3D BC render targets
+// A 3D BC texture has no block views (vk_texture.c create_tex, TOTK_BLOCK_VIEWS_3D): on RDNA2 cards such an image
+// made BLOCK_TEXEL_VIEW_COMPATIBLE and 2D_ARRAY_COMPATIBLE took GPU writes past the end of its memory (issue #5). Draws
+// into it through an uncompressed view of its blocks (agl's BC4 encoder fills 32x32x32 and 64x64x64 volumes and their
+// levels at the logo) go to a stand-in: a 2D array of the blocks of one level in the view's format, one layer per
+// depth plane. It starts with the level's content, so a pass that writes part of a plane keeps the rest, and each pass
+// end copies the planes it drew into the level (a copy between a compressed and a size-compatible uncompressed format).
+typedef struct { VkImage bc, img; VmaAllocation alloc; VkFormat fmt; uint32_t level, w, h, d; } BcStandIn;
+#define BC_STANDINS 64   // one per level drawn: 6 volumes of up to 7 levels at the logo
+static BcStandIn bcs[BC_STANDINS];
+static int nbcs;
+static PlatMutex bcs_lock = PLAT_MUTEX_INIT;   // the replay adds and reads; destroy_tex (any thread) removes
+
+static void image_barrier(VkCommandBuffer cb, VkImage img, VkImageLayout from, uint32_t layers) {
+    VkImageMemoryBarrier2 ib = {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2, .srcStageMask = VK_PIPELINE_STAGE_2_NONE,
+                                .dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+                                .dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT,
+                                .oldLayout = from, .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+                                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                .image = img, .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, layers}};
+    VkDependencyInfo di = {.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &ib};
+    vkCmdPipelineBarrier2(cb, &di);
+}
+
+static void memory_barrier(VkCommandBuffer cb, VkPipelineStageFlags2 src, VkAccessFlags2 sa, VkPipelineStageFlags2 dst,
+                           VkAccessFlags2 da) {
+    VkMemoryBarrier2 mb = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2, .srcStageMask = src, .srcAccessMask = sa,
+                           .dstStageMask = dst, .dstAccessMask = da};
+    VkDependencyInfo di = {.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO, .memoryBarrierCount = 1, .pMemoryBarriers = &mb};
+    vkCmdPipelineBarrier2(cb, &di);
+}
+
+// The stand-in of level level of a 3D BC image for draws through view format fmt, made on first use; 0 when none can
+// be made (logged). Replay thread.
+static int bc_standin(const VkTexImage *img, uint32_t level, VkFormat fmt, BcStandIn *out) {
+    static int warned;
+    plat_mutex_lock(&bcs_lock);
+    int full = nbcs == BC_STANDINS;
+    for (int i = 0; i < nbcs; i++)
+        if (bcs[i].bc == img->image && bcs[i].level == level && bcs[i].fmt == fmt) {
+            *out = bcs[i];
+            plat_mutex_unlock(&bcs_lock);
+            return 1;
+        }
+    plat_mutex_unlock(&bcs_lock);
+    if (full) {
+        if (!warned++) rt_log("vk: more than %d 3D BC render targets: the others are left out", BC_STANDINS);
+        return 0;
+    }
+    uint32_t lw = level_extent(img->width, level), lh = level_extent(img->height, level);
+    BcStandIn s = {img->image, VK_NULL_HANDLE, NULL, fmt, level, (lw + 3) / 4, (lh + 3) / 4,
+                   level_extent(img->depth, level)};
+    VkImageCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .imageType = VK_IMAGE_TYPE_2D, .format = fmt,
+                            .extent = {s.w, s.h, 1}, .mipLevels = 1, .arrayLayers = s.d, .samples = VK_SAMPLE_COUNT_1_BIT,
+                            .tiling = VK_IMAGE_TILING_OPTIMAL,
+                            .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                     VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED};
+    VmaAllocationCreateInfo ai = {.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE};
+    if (vmaCreateImage(vk_ctx()->vma, &ci, &ai, &s.img, &s.alloc, NULL) != VK_SUCCESS) {
+        if (!warned++) rt_log("vk: stand-in for a 3D BC render target could not be created: left out");
+        return 0;
+    }
+    // In the upload batch, which goes to the queue before this part: GENERAL, then the texture's blocks.
+    VkCommandBuffer cb = vk_upload_begin();
+    image_barrier(cb, s.img, VK_IMAGE_LAYOUT_UNDEFINED, s.d);
+    memory_barrier(cb, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT, VK_PIPELINE_STAGE_2_COPY_BIT,
+                   VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT);
+    VkImageCopy rg = {.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, 0, 1},
+                      .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, s.d},
+                      .extent = {lw, lh, s.d}};   // texels of the compressed source
+    vkCmdCopyImage(cb, img->image, VK_IMAGE_LAYOUT_GENERAL, s.img, VK_IMAGE_LAYOUT_GENERAL, 1, &rg);
+    memory_barrier(cb, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+                   VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT);
+    vk_upload_end();
+    plat_mutex_lock(&bcs_lock);
+    bcs[nbcs++] = s;
+    plat_mutex_unlock(&bcs_lock);
+    rt_log("vk: 3D BC render target %ux%ux%u level %u drawn through a %ux%u x %u stand-in (format %d)", img->width,
+           img->height, img->depth, level, s.w, s.h, s.d, (int)fmt);
+    *out = s;
+    return 1;
+}
+
+// vk_exec_draw.c vk_exec_image_gone: the stand-in of a BC image that goes, freed once the GPU is done with it.
+void vk_exec_bc_gone(VkImage image) {
+    plat_mutex_lock(&bcs_lock);
+    for (int i = 0; i < nbcs; i++)
+        if (bcs[i].bc == image) {
+            vk_defer_image(bcs[i].img, bcs[i].alloc);
+            bcs[i--] = bcs[--nbcs];
+        }
+    plat_mutex_unlock(&bcs_lock);
+}
+
+// At a pass end: the planes the pass drew into a stand-in go to its texture.
+static void bc_copy_back(VkExec *ex, const VkExecTarget *t) {
+    plat_mutex_lock(&bcs_lock);
+    for (int i = 0; i < nbcs; i++) {
+        if (bcs[i].img != t->image) continue;
+        memory_barrier(ex->cb, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT, VK_PIPELINE_STAGE_2_COPY_BIT,
+                       VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT);
+        VkImageCopy rg = {.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, t->base_layer, t->layers},
+                          .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, bcs[i].level, 0, 1},
+                          .dstOffset = {0, 0, (int32_t)t->base_layer},
+                          .extent = {bcs[i].w, bcs[i].h, t->layers}};   // texels of the uncompressed source
+        vkCmdCopyImage(ex->cb, t->image, VK_IMAGE_LAYOUT_GENERAL, bcs[i].bc, VK_IMAGE_LAYOUT_GENERAL, 1, &rg);
+        memory_barrier(ex->cb, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                       VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT);
+        ex->recorded++;
+        break;
+    }
+    plat_mutex_unlock(&bcs_lock);
+}
+
+// A draw into a 3D BC image without block views through an uncompressed view of its blocks: the target is the
+// image's stand-in (bc_standin). 1 when o is filled (target or left out), 0 for any other target.
+static int bc_target(const tex_t *t, const view_t *v, int has_v, const VkTexImage *img, VkExecTarget *o) {
+    int bw, bh;
+    if (img->type != VK_IMAGE_TYPE_3D || img->block_views || !nvn_fmt_bpb(t->d.format, &bw, &bh) || bw != 4 || bh != 4)
+        return 0;
+    VkFormat fmt;
+    BcStandIn s;
+    uint32_t level = has_v && v->set_levels ? v->base_level : 0;
+    if (level >= img->levels) {
+        warn_once(W_LEVEL, "render target level %u of a %u-level texture: left out", level, img->levels);
+        return 1;
+    }
+    if (!has_v || !v->set_format || !view_format(t, v, 1, &fmt) || !bc_standin(img, level, fmt, &s)) {
+        warn_once(W_BLOCK_VIEW, "render target format %#x (%ux%u) through view format %#x: no block view, left out",
+                  t->d.format, t->d.width, t->d.height, has_v && v->set_format ? v->format : 0);
+        return 1;
+    }
+    uint32_t base = 0, layers = s.d;
+    if (v->set_layers) {
+        base = v->min_layer;
+        layers = v->nlayers ? v->nlayers : (base < s.d ? s.d - base : 0);
+    }
+    if (base >= s.d || !layers) return 1;
+    if (base + layers > s.d) layers = s.d - base;
+    o->image = s.img;   // not img->image: view_of makes this command buffer's view of the stand-in
+    o->img = img;
+    o->format = fmt;
+    o->view_type = layers > 1 ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
+    o->aspect = VK_IMAGE_ASPECT_COLOR_BIT;
+    o->level = 0, o->base_layer = base, o->layers = layers;
+    o->width = s.w, o->height = s.h, o->samples = 1;
+    o->nvn_format = v->format;
+    return 1;
+}
+
 static void resolve_target(const tex_t *t, const view_t *v, int has_v, int depth_slot, VkExecTarget *o) {
     memset(o, 0, sizeof *o);
     o->tex = t;
     if (!t) return;
     const VkTexImage *img = vk_texture_get(t);
+    if (img && !depth_slot && bc_target(t, v, has_v, img, o)) return;   // a 3D BC image: its stand-in
     VkImageUsageFlags need = depth_slot ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     int is3d = img && img->type == VK_IMAGE_TYPE_3D && !depth_slot;   // slices drawn through 2D views (2D_ARRAY_COMPATIBLE)
     if (!img || !(img->usage & need) || (img->type != VK_IMAGE_TYPE_2D && !is3d)) {
@@ -192,6 +346,7 @@ static void resolve_target(const tex_t *t, const view_t *v, int has_v, int depth
     }
     o->image = img->image;
     o->img = img;
+    o->scale = img->scale ? img->scale : 1;
     o->format = fmt;
     o->view_type = layers > 1 ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
     o->aspect = depth_slot ? img->aspect & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)
@@ -227,7 +382,7 @@ static void resolve_rt(VkExec *ex) {
     ex->rt_resolved = 1;
     const p_set_rt *r = &ex->rt;
     int n = r->n < 0 ? 0 : r->n > 8 ? 8 : r->n;
-    uint32_t w = UINT32_MAX, h = UINT32_MAX, layers = UINT32_MAX, samples = 0;
+    uint32_t w = UINT32_MAX, h = UINT32_MAX, layers = UINT32_MAX, samples = 0, scale = 1;
     for (int i = 0; i < 8; i++) {
         VkExecTarget *t = &ex->color[i];
         resolve_target(i < n ? r->color[i] : NULL, &r->cview[i], i < n && r->has_cview[i], 0, t);
@@ -238,6 +393,7 @@ static void resolve_rt(VkExec *ex) {
         if (t->height < h) h = t->height;
         if (t->layers < layers) layers = t->layers;
         if (!samples) samples = t->samples;
+        if (t->scale > scale) scale = t->scale;
     }
     VkExecTarget *d = &ex->depth;
     resolve_target(r->depth, &r->dview, r->has_dview, 1, d);
@@ -249,6 +405,7 @@ static void resolve_rt(VkExec *ex) {
         if (d->height < h) h = d->height;
         if (d->layers < layers) layers = d->layers;
         if (!samples) samples = d->samples;
+        if (d->scale > scale) scale = d->scale;
     }
     ex->pass_noatt = w == UINT32_MAX;
     if (ex->pass_noatt) {
@@ -260,6 +417,7 @@ static void resolve_rt(VkExec *ex) {
                              ex->vp[0][1], ex->vp[0][2], ex->vp[0][3]);
     }
     ex->pass_w = w, ex->pass_h = h, ex->pass_layers = layers;
+    ex->pass_scale = ex->pass_noatt ? 1 : scale;
     ex->pass_ncolor = (uint32_t)n;
     ex->pass_samples = samples ? samples : 1;
     ex->pipe.samples = (uint8_t)ex->pass_samples;
@@ -418,6 +576,8 @@ void vk_exec_barrier(VkExec *ex) { barrier_to(ex, NULL, NULL, 0); }
 void vk_exec_pass_begin(VkExec *ex) {
     if (ex->in_pass) return;
     resolve_rt(ex);
+    vk_contact_pass_begin(ex);
+    vk_dlaa_pass(ex);   // DLAA runs before the bloom chain's first pass (vk_dlaa.c)
     // Learned targets (VkTexImage.fb_learned) are attached in the feedback layout
     VkImage want[9];
     VkImageAspectFlags wasp[9];
@@ -469,6 +629,9 @@ void vk_exec_pass_end(VkExec *ex) {
     vkCmdEndRendering(ex->cb);
     ex->recorded++;
     ex->in_pass = 0;
+    for (int i = 0; i < ex->pass_ncolor && i < 8; i++)   // stand-ins of 3D BC targets go to their textures
+        if (ex->color[i].image && ex->color[i].img && ex->color[i].img->image != ex->color[i].image)
+            bc_copy_back(ex, &ex->color[i]);
     if (vk_dump_armed) vk_dump_pass_end(ex);
     uint64_t stamp = __atomic_load_n(&gfx_counters.frames, __ATOMIC_RELAXED) + 1;
     for (int i = 0; i < 8; i++)
@@ -511,8 +674,9 @@ VkBuffer vk_exec_inline_buffer(VkDeviceSize size) {
 VkRect2D vk_exec_scissor(const VkExec *ex) {
     int64_t w = ex->pass_w, h = ex->pass_h;
     if (!ex->has_scissor) return (VkRect2D){{0, 0}, {(uint32_t)w, (uint32_t)h}};
-    int64_t x0 = ex->scissor.x, y0 = ex->scissor.y;
-    int64_t x1 = x0 + ex->scissor.w, y1 = y0 + ex->scissor.h;
+    int64_t k = ex->pass_scale > 1 ? ex->pass_scale : 1;
+    int64_t x0 = ex->scissor.x * k, y0 = ex->scissor.y * k;
+    int64_t x1 = x0 + (int64_t)ex->scissor.w * k, y1 = y0 + (int64_t)ex->scissor.h * k;
     if (x0 < 0) x0 = 0;
     if (y0 < 0) y0 = 0;
     if (x1 > w) x1 = w;

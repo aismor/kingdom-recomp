@@ -13,7 +13,6 @@ ROOT=$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd -P)
 SETUP="$ROOT/build/setup"
 MNG_URL=https://github.com/ly05010419/MacNativeGames.git
 MNG_COMMIT=b75be8cfa704df3701e86130c8ced268e79d6b11   # tools/make_release.py MNG_COMMIT
-HACTOOL_COMMIT=1d64a83450e025622f3468c28fc4164dad2c5ef6   # docs/linux.en.md "hactool"
 
 say() { printf '\033[1m[kingdom-setup]\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31m[kingdom-setup]\033[0m %s\n' "$*" >&2; exit 1; }
@@ -49,16 +48,16 @@ box() {   # box [podman run options] -- command...
         "${opts[@]}" "$IMAGE" "$@"
 }
 
-# ---- host check: CPU (x86-64-v3) and a Vulkan 1.3 device, probed on the host
+# ---- host check: CPU (x86-64-v2 or v3) and a Vulkan 1.3 device, probed on the host
 say "checking CPU and Vulkan..."
 box -- clang -O1 installer/hostcheck.c -ldl -o "$SETUP/hostcheck"
 HOST_JSON=$("$SETUP/hostcheck") || die "the host check failed to run"
-python3 - "$HOST_JSON" <<'EOF' || exit 1
+HOST_CPU=$(python3 - "$HOST_JSON" <<'EOF'
 import json, sys
 h = json.loads(sys.argv[1])
 fail = None
-if not h['x86_64_v3']:
-    fail = 'the CPU lacks AVX2 (x86-64-v3)'
+if not h['x86_64_v2']:
+    fail = 'the CPU lacks the x86-64-v2 instruction set'
 elif not h['loader']:
     fail = 'no Vulkan loader (libvulkan.so.1): install your GPU driver and vulkan-loader'
 elif not h['devices']:
@@ -67,37 +66,49 @@ elif not any(tuple(d['api'][:2]) >= (1, 3) for d in h['devices']):
     fail = 'no Vulkan 1.3 device: ' + ', '.join(f"{d['name']} ({d['api'][0]}.{d['api'][1]})" for d in h['devices'])
 if fail:
     sys.exit(f'[kingdom-setup] {fail}')
-print('[kingdom-setup] ' + ', '.join(f"{d['name']} (Vulkan {d['api'][0]}.{d['api'][1]})" for d in h['devices']))
+print('v3' if h['x86_64_v3'] else 'v2')
 EOF
+) || exit 1
+say "host is compatible ($HOST_CPU, Vulkan 1.3)"
 
 # ---- what the installer steps run, built once in the container (installer/layout.py, Linux dev layout)
 if [[ ! -x "$ROOT/toolchain/hactool/hactool" ]]; then
     say "building hactool..."
-    box -- bash -euc '
-        SRC=toolchain/src/hactool OUT=toolchain/hactool
-        mkdir -p "$SRC" "$OUT"
-        git -C "$SRC" init -q
-        git -C "$SRC" remote add origin https://github.com/SciresM/hactool.git 2>/dev/null || true
-        git -C "$SRC" fetch -q --depth 1 origin "$1"
-        git -C "$SRC" checkout -q -f FETCH_HEAD
-        git -C "$SRC" apply --whitespace=nowarn "$PWD/tools/hactool/portable.patch"
-        make -C "$SRC" CC=gcc EXEEXT= LDFLAGS="-lmbedtls -lmbedx509 -lmbedcrypto"
-        install -m755 "$SRC/hactool" "$OUT/hactool"
-        cp "$SRC/LICENSE" "$OUT/"' _ "$HACTOOL_COMMIT"
+    box -- python tools/build_hactool.py
 fi
-if [[ ! -f "$ROOT/build/xlate/totk_xlate.exe" ]]; then
+if [[ ! -f "$ROOT/build/xlate/totk_xlate" ]]; then
     say "building the shader translator (first run only, several minutes)..."
     box -- python tools/build_xlate.py
 fi
-if [[ ! -f "$ROOT/build/shader_list.tsv" ]]; then
+if [[ ! -d "$ROOT/refs/MacNativeGames/.git" ]]; then
     say "fetching the shader list (MacNativeGames)..."
     box -- bash -euc '
-        REPO=build/MacNativeGames-history
+        REPO=refs/MacNativeGames
         [[ -d "$REPO/.git" ]] || git clone -q --filter=blob:none --no-checkout "$1" "$REPO"
-        git -C "$REPO" fetch -q origin
-        python -c "import sys; sys.path.insert(0, \"tools\"); import shader_list; \
-sys.stdout.write(shader_list.history(sys.argv[1], sys.argv[2]))" "$REPO" "$2" > build/shader_list.tsv.tmp
-        mv build/shader_list.tsv.tmp build/shader_list.tsv' _ "$MNG_URL" "$MNG_COMMIT"
+        git -C "$REPO" fetch -q origin "$2"
+        git -C "$REPO" checkout -q FETCH_HEAD' _ "$MNG_URL" "$MNG_COMMIT"
+fi
+if [[ ! -f "$ROOT/tools/data/shader_list.tsv" ]]; then
+    say "building the shader list (one-time, a minute)..."
+    box -- python3 -c "
+import sys
+from pathlib import Path
+sys.path.insert(0, 'tools')
+import shader_list as sl
+out = Path('tools/data/shader_list.tsv')
+out.parent.mkdir(parents=True, exist_ok=True)
+out.write_text(sl.history(Path('refs/MacNativeGames'), 'HEAD'), encoding='utf-8')
+"
+fi
+rtlib_needs_rebuild() {
+    local lib=$1
+    [[ ! -f "$lib" ]] && return 0
+    find "$ROOT/runtime" -type f \( -name '*.c' -o -name '*.cpp' -o -name '*.h' \) -newer "$lib" -print -quit | grep -q .
+}
+if rtlib_needs_rebuild "$ROOT/build/install-rtlib/libtotkrt.a"; then
+    say "building the runtime library (runtime sources changed)..."
+    box -- python3 tools/build_game.py --make-runtime-lib --out build/install-rtlib --toolchain /usr --cpu v3 --jobs "$(nproc)"
+    box -- bash -lc 'python3 tools/build_game.py --make-runtime-lib --out build/install-rtlib-v2-tmp --toolchain /usr --cpu v2 --jobs "$(nproc)" && mv build/install-rtlib-v2-tmp/libtotkrt.a build/install-rtlib/libtotkrt-v2.a && rm -rf build/install-rtlib-v2-tmp'
 fi
 
 # ---- the window
@@ -120,8 +131,8 @@ rm -f "$OPEN_FIFO" && mkfifo "$OPEN_FIFO"
 ( while read -r dir < "$OPEN_FIFO"; do xdg-open "$dir" >/dev/null 2>&1 & done ) &
 OPENER=$!
 say "opening the installer window..."
-box "${DISPLAY_OPTS[@]}" -e KINGDOM_HOST_CHECKED=1 -e KINGDOM_PENDING_SHADERS="$PENDING" \
-    -e KINGDOM_OPEN_FIFO="$OPEN_FIFO" -- python -m installer.gui || true
+box "${DISPLAY_OPTS[@]}" -e KINGDOM_HOST_CHECKED=1 -e KINGDOM_HOST_CPU="$HOST_CPU" -e KINGDOM_PENDING_SHADERS="$PENDING" \
+    -e KINGDOM_OPEN_FIFO="$OPEN_FIFO" -- python -m installer.gui "$@" || true
 kill "$OPENER" 2>/dev/null || true
 rm -f "$OPEN_FIFO"
 

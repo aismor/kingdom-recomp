@@ -18,12 +18,11 @@
 // as x/2+1/2, UNORM and sRGB bytes written as stored. Caps: MAX_PASSES passes copied, PNG_CAP bytes of PNGs.
 // TOTK_DUMP_TEX=<id>|<w>x<h>[,...]: those texture slots, or 2D textures of that size, are copied where first sampled,
 // whatever their format.
-// TOTK_DUMP_UBO=1: each listed pipeline also prints the first 16 vec4 of its user uniform blocks (c3 and up), read from
-// guest memory when the entry is listed. A block the submission rewrites with UpdateUniformBuffer shows its value from
+// TOTK_DUMP_UBO=<n>: each listed pipeline also prints the first n vec4 of its user uniform blocks (c3 and up; 1 means 16,
+// the cap is 4096), read from guest memory when the entry is listed. A block the submission rewrites with UpdateUniformBuffer shows its value from
 // before the submission (vk_exec_draw.c upd_note).
 // TOTK_DUMP_SKIP_RUNS=1: a render pass with the same targets as the render pass before it is logged but not copied
 // (the terrain decals draw one pass each into the G-buffer and would use up both caps).
-#include "os.h"
 #include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -35,6 +34,7 @@
 #include "nvn_api.h"
 #include "vk.h"
 #include "vk_exec.h"
+#include "platform/platform.h"
 
 #define MAX_PASSES 400
 #define PNG_CAP (2ull << 30)
@@ -48,13 +48,13 @@ static uint64_t dump_frame, log_from;   // log_from: TOTK_DUMP_LOG, first frame 
 static char dir[400];
 static FILE *passes_f, *images_f;
 static int seq, finished, copied;      // copied: passes and dispatches of the dump frame whose images were copied
-static int skip_runs, dump_ubo;        // TOTK_DUMP_SKIP_RUNS, TOTK_DUMP_UBO
+static int skip_runs, dump_ubo;        // TOTK_DUMP_SKIP_RUNS, TOTK_DUMP_UBO (vec4 per block, 0 for none)
 static uint32_t want_tex[16][2];       // TOTK_DUMP_TEX: slot id and 0, or width and height
 static int nwant_tex;
 static uint64_t last_targets;          // targets_sig of the last render pass; 0 after a dispatch
 static const char *pass_skip;          // why the current pass copies nothing, or NULL
-static volatile LONG64 png_bytes, inflight;
-static SRWLOCK rec_lock = SRWLOCK_INIT, img_lock = SRWLOCK_INIT;
+static volatile int64_t png_bytes, inflight;
+static PlatMutex rec_lock = PLAT_MUTEX_INIT, img_lock = PLAT_MUTEX_INIT;
 
 // ---- formats
 
@@ -258,14 +258,14 @@ static void write_images(const Job *j) {
         rt_write_png(path, out, pw, ph);
     }
     uint64_t all = distinct(j, 0, j->h), top = distinct(j, 0, j->h / 4 ? j->h / 4 : 1);
-    AcquireSRWLockExclusive(&img_lock);
+    plat_mutex_lock(&img_lock);
     if (images_f) {
         fprintf(images_f, "%s %ux%ux%u min %g %g %g %g max %g %g %g %g distinct %llu top-quarter %llu nan %llu\n", j->name,
                 j->w, j->h, j->d, mn[0], mn[1], mn[2], mn[3], mx[0], mx[1], mx[2], mx[3], (unsigned long long)all,
                 (unsigned long long)top, (unsigned long long)nans);
         fflush(images_f);
     }
-    ReleaseSRWLockExclusive(&img_lock);
+    plat_mutex_unlock(&img_lock);
     free(out);
     free(px);
 }
@@ -276,7 +276,7 @@ static void job_done(void *arg) {
     vmaInvalidateAllocation(vma, j->alloc, 0, VK_WHOLE_SIZE);
     write_images(j);
     vmaDestroyBuffer(vma, j->buf, j->alloc);
-    InterlockedAdd64(&inflight, -(LONG64)j->bytes);
+    plat_add64(&inflight, -(int64_t)j->bytes);
     free(j);
 }
 
@@ -329,8 +329,8 @@ static const char *copy_region(VkExec *ex, VkImage image, VkFormat vf, VkImageAs
     di.pMemoryBarriers = &post;
     vkCmdPipelineBarrier2(ex->cb, &di);
     ex->recorded += 3;
-    InterlockedAdd64(&png_bytes, (LONG64)est);
-    InterlockedAdd64(&inflight, (LONG64)bytes);
+    plat_add64(&png_bytes, (int64_t)est);
+    plat_add64(&inflight, (int64_t)bytes);
     vk_completion_add(ex->fence, job_done, j);
     return NULL;
 }
@@ -384,7 +384,7 @@ static void buf_grid(const uint8_t *m) {
 static void buf_done(void *arg) {
     BufJob *j = arg;
     vmaInvalidateAllocation(vk_ctx()->vma, j->alloc, 0, VK_WHOLE_SIZE);
-    AcquireSRWLockExclusive(&img_lock);
+    plat_mutex_lock(&img_lock);
     if (bufs_f) {
         uint64_t lo = bd_size, hi = 0;
         for (uint64_t i = 0; i < bd_size; i++)
@@ -402,7 +402,7 @@ static void buf_done(void *arg) {
             if (bd_prev) memcpy(bd_prev, j->map, bd_size);
         }
     }
-    ReleaseSRWLockExclusive(&img_lock);
+    plat_mutex_unlock(&img_lock);
     vmaDestroyBuffer(vk_ctx()->vma, j->buf, j->alloc);
     free(j);
 }
@@ -576,7 +576,7 @@ static void describe_bindings(Str *b, const VkExec *ex, const VkPipeInfo *info) 
             if (u->addr && vk_mem_resolve(u->addr, 1, &ms)) {
                 uint64_t n = u->size && u->size < ms.avail ? u->size : ms.avail;
                 const float *f = (const float *)(uintptr_t)u->addr;
-                for (uint64_t k = 0; k < 16 && (k + 1) * 16 <= n; k++)
+                for (uint64_t k = 0; k < (uint64_t)dump_ubo && (k + 1) * 16 <= n; k++)
                     sp(b, "%s[%llu] %g %g %g %g", k % 4 ? " " : "\n      ", (unsigned long long)k, f[4 * k], f[4 * k + 1],
                        f[4 * k + 2], f[4 * k + 3]);
             } else {
@@ -668,7 +668,7 @@ static uint64_t bindings_hash(const VkExec *ex, const VkPipeInfo *info) {
 }
 
 void vk_dump_draw(VkExec *ex, const VkPipeState *s, VkPipeline p, const VkPipeInfo *info) {
-    AcquireSRWLockExclusive(&rec_lock);
+    plat_mutex_lock(&rec_lock);
     if (!active()) goto out;
     pass_draws++;
     uint64_t th = bindings_hash(ex, info);
@@ -687,7 +687,7 @@ void vk_dump_draw(VkExec *ex, const VkPipeState *s, VkPipeline p, const VkPipeIn
     describe_bindings(&b, ex, info);
     ents[nents++] = (Ent){p, th, 1, b.s};
 out:
-    ReleaseSRWLockExclusive(&rec_lock);
+    plat_mutex_unlock(&rec_lock);
 }
 
 static void target_line(VkExec *ex, const VkExecTarget *t, const char *tag, int n) {
@@ -733,7 +733,7 @@ static void pass_decide(int same_targets) {
 }
 
 void vk_dump_pass_end(VkExec *ex) {
-    AcquireSRWLockExclusive(&rec_lock);
+    plat_mutex_lock(&rec_lock);
     if (!active()) goto out;
     int n = seq++;
     uint64_t sig = targets_sig(ex);
@@ -759,12 +759,12 @@ void vk_dump_pass_end(VkExec *ex) {
     fflush(passes_f);
     nents = ents_over = pass_draws = 0;
 out:
-    ReleaseSRWLockExclusive(&rec_lock);
+    plat_mutex_unlock(&rec_lock);
 }
 
 void vk_dump_dispatch(VkExec *ex, const GfxShader *cs, VkPipeline p, const VkPipeInfo *info, const p_dispatch *d) {
     (void)p;
-    AcquireSRWLockExclusive(&rec_lock);
+    plat_mutex_lock(&rec_lock);
     if (!active()) goto out;
     int n = seq++;
     pass_decide(0);
@@ -805,7 +805,7 @@ void vk_dump_dispatch(VkExec *ex, const GfxShader *cs, VkPipeline p, const VkPip
     buf_snap(ex, n);
     fflush(passes_f);
 out:
-    ReleaseSRWLockExclusive(&rec_lock);
+    plat_mutex_unlock(&rec_lock);
 }
 
 static const char *tex_desc(const tex_t *t, char *buf, size_t n) {
@@ -821,7 +821,7 @@ static void region_desc(const NVNcopyRegion *r, char *buf, size_t n) {
 
 void vk_dump_copy(VkExec *ex, uint32_t op, const void *payload) {
     (void)ex;
-    AcquireSRWLockExclusive(&rec_lock);
+    plat_mutex_lock(&rec_lock);
     if (!active()) goto out;
     char a[96], b[96], ra[64], rb[64];
     switch (op) {
@@ -857,19 +857,10 @@ void vk_dump_copy(VkExec *ex, uint32_t op, const void *payload) {
     default: break;
     }
 out:
-    ReleaseSRWLockExclusive(&rec_lock);
+    plat_mutex_unlock(&rec_lock);
 }
 
-static void make_dirs(char *path) {
-    for (char *p = path + 1; *p; p++)
-        if (*p == '/' || *p == '\\') {
-            char c = *p;
-            *p = 0;
-            CreateDirectoryA(path, NULL);
-            *p = c;
-        }
-    CreateDirectoryA(path, NULL);
-}
+static void make_dirs(char *path) { plat_file_mkdir_p(path); }
 
 void vk_dump_init(void) {
     const char *e = cfg_get("TOTK_DUMP");
@@ -879,7 +870,10 @@ void vk_dump_init(void) {
     const char *sr = cfg_get("TOTK_DUMP_SKIP_RUNS");
     skip_runs = sr && *sr && *sr != '0';
     const char *du = cfg_get("TOTK_DUMP_UBO");
-    dump_ubo = du && *du && *du != '0';
+    dump_ubo = du && *du ? atoi(du) : 0;
+    if (dump_ubo == 1) dump_ubo = 16;
+    if (dump_ubo > 4096) dump_ubo = 4096;
+    if (dump_ubo < 0) dump_ubo = 0;
     const char *wt = cfg_get("TOTK_DUMP_TEX");
     for (char *q = (char *)wt; q && *q && nwant_tex < 16; q += *q == ',') {
         uint32_t *w = want_tex[nwant_tex++];
@@ -914,15 +908,15 @@ void vk_dump_init(void) {
 
 void vk_dump_present(uint64_t frame) {
     if (frame != dump_frame) return;
-    AcquireSRWLockExclusive(&rec_lock);
+    plat_mutex_lock(&rec_lock);
     finished = 1;
-    ReleaseSRWLockExclusive(&rec_lock);
+    plat_mutex_unlock(&rec_lock);
     vk_sync_finish();   // the frame's copies are converted and written
-    AcquireSRWLockExclusive(&img_lock);
+    plat_mutex_lock(&img_lock);
     fclose(images_f);
     images_f = NULL;
     if (bufs_f) fclose(bufs_f), bufs_f = NULL;
-    ReleaseSRWLockExclusive(&img_lock);
+    plat_mutex_unlock(&img_lock);
     fclose(passes_f);
     passes_f = NULL;
     rt_log("vk_dump: frame %llu: %d passes and dispatches, about %llu MB of PNGs in %s", (unsigned long long)frame, seq,

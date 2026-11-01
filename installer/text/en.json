@@ -1,5 +1,6 @@
 {
  "step.check": "Checking the computer and the game files",
+ "step.fonts": "Extracting the system fonts",
  "step.extract": "Extracting the game",
  "step.lift": "Translating the game code to C",
  "step.compile": "Compiling totk.exe",

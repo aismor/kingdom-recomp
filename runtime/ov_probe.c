@@ -1,4 +1,4 @@
-// --probe-services: every override of ov_system.c, ov_input.c, ov_media.c, swkbd_win.c and
+// --probe-services: every override of ov_system.c, ov_input.c, ov_media.c, swkbd.c and
 // ov_gfx.c called the way guest code calls it: by its synthetic address through rt_call / rt_dispatch, with AAPCS64
 // arguments, on the guest main thread. Checks that each one matches a relocation of the loaded modules, then the
 // values: language, operation mode, notification messages, account, time round trips, controllers, codec state,
@@ -6,7 +6,6 @@
 // (answers from TOTK_SWKBD_ANSWER, then the window pressed by TOTK_SWKBD_TEST) and the shared fonts when
 // tools/extract_fonts.py has written them. The named fatal stubs, and the account UID of a second run, are checked in
 // child processes (this executable again, TOTK_PROBE_SERVICES_CHILD=<case>).
-#include "os.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,6 +20,7 @@
 #include "kernel.h"
 #include "ov.h"
 #include "platform/platform.h"
+#include "utf16.h"
 #include "ui_text.h"
 
 #define CHILD_ENV "TOTK_PROBE_SERVICES_CHILD"
@@ -241,18 +241,19 @@ static char *lang(void) {
     return s;
 }
 
-static void set_env(const char *name, const char *value) { _putenv_s(name, value ? value : ""); }
+static void set_env(const char *name, const char *value) { plat_setenv(name, value); }   // NULL removes it
 
 static void probe_oe(void) {
-    char *keep_lang = cfg_get("TOTK_LANG") ? _strdup(cfg_get("TOTK_LANG")) : NULL;
-    char *keep_locale = cfg_get("TOTK_LOCALE") ? _strdup(cfg_get("TOTK_LOCALE")) : NULL;
+    char *keep_lang = cfg_get("TOTK_LANG") ? strdup(cfg_get("TOTK_LANG")) : NULL;
+    char *keep_locale = cfg_get("TOTK_LOCALE") ? strdup(cfg_get("TOTK_LOCALE")) : NULL;
     static const struct { const char *lang, *locale, *want; } cases[] = {
         {NULL, "en-US", "en-US"}, {NULL, "be-BY", "en-US"}, {NULL, "xx", "en-US"},     {NULL, "ja-JP", "ja"},
         {NULL, "fr-CA", "fr-CA"}, {NULL, "es-MX", "es-419"}, {NULL, "es_ES", "es"},     {NULL, "zh-Hant-TW", "zh-Hant"},
-        {NULL, "zh-CN", "zh-Hans"}, {NULL, "en-GB", "en-GB"}, {NULL, "ru", "ru"},
-        {NULL, "pt-BR", "pt-BR"}, {NULL, "pt-PT", "pt"},       {"ja", "fr-FR", "ja"},
-        {"en-US", NULL, "en-US"}};
+        {NULL, "zh-CN", "zh-Hans"}, {NULL, "en-GB", "en-GB"}, {NULL, "ru", "ru"},       {"ja", "fr-FR", "ja"},
+        {"en-US", NULL, "en-US"}, {"zh-CN", NULL, "zh-Hans"}, {"zh-TW", NULL, "zh-Hant"},
+        {"zh-Hans", NULL, "zh-Hans"}, {"zh-Hant", NULL, "zh-Hant"}};
     int bad = 0;
+    printf("oe: configured language (TOTK_LANG=%s) is %s\n", keep_lang ? keep_lang : "", lang());
     for (size_t i = 0; i < sizeof cases / sizeof *cases; i++) {
         set_env("TOTK_LANG", cases[i].lang);
         set_env("TOTK_LOCALE", cases[i].locale);
@@ -276,7 +277,7 @@ static void probe_oe(void) {
     free(keep_locale);
     checks++;
     failures += bad > 0;
-    printf("oe: language %s by default (en-US locale), %s for this Windows user locale; %d locale/TOTK_LANG cases %s\n",
+    printf("oe: language %s by default (en-US locale), %s for this user's locale; %d locale/TOTK_LANG cases %s\n",
            def, sys, (int)(sizeof cases / sizeof *cases), bad ? "FAILED" : "ok");
 
     CALL("oe.Initialize", 0);
@@ -303,7 +304,7 @@ static void probe_oe(void) {
     CALL("oe.GetExpectedVolumeBalance", U(&l), U(&r));
     CHECK(l == 0.25f && r == 0.75f, "volume balance %g/%g", (double)l, (double)r);
     int64_t t1 = (int64_t)CALL("oe.GetProgramTotalActiveTime", 0);
-    Sleep(2);
+    plat_sleep_ms(2);
     int64_t t2 = (int64_t)CALL("oe.GetProgramTotalActiveTime", 0);
     CHECK(t1 > 0 && t2 > t1, "program total active time %lld, %lld", (long long)t1, (long long)t2);
     CALL("oe.SetUserInactivityDetectionTimeExtended", 1);
@@ -311,11 +312,11 @@ static void probe_oe(void) {
     CALL("oe.FinishStartupLogo", 0);
 }
 
-static DWORD WINAPI late_push(void *p) {
+static void late_push(void *p) {
     (void)p;
-    Sleep(50);
+    plat_sleep_ms(50);
     oe_push_message(0x21);
-    return 0;
+    return;
 }
 
 static void probe_messages(void) {
@@ -325,12 +326,11 @@ static void probe_messages(void) {
     oe_push_message(0x20);
     CHECK((uint8_t)CALL("oe.TryPopNotificationMessage", U(&m)) == 1 && m == 0x1f, "TryPop after a push: %#x", m);
     CHECK((uint32_t)CALL("oe.PopNotificationMessage", 0) == 0x20, "Pop after a push");
-    HANDLE h = CreateThread(NULL, 0, late_push, NULL, 0, NULL);
+    PlatThread *h = plat_thread_new(late_push, NULL, "late push");
     uint64_t t0 = kern_now_ns();
     uint32_t late = (uint32_t)CALL("oe.PopNotificationMessage", 0);
     uint64_t waited = kern_now_ns() - t0;
-    WaitForSingleObject(h, INFINITE);
-    CloseHandle(h);
+    plat_thread_join(h);
     CHECK(late == 0x21 && waited >= 40000000, "blocking Pop got %#x after %llu ms", late,
           (unsigned long long)(waited / 1000000));
     printf("oe: notification messages pushed then popped (TryPop, Pop, Pop blocked %llu ms until a host push): %s\n",
@@ -348,6 +348,13 @@ static int event_works(uint64_t ev, int autoclear) {
     return !before && after && again == !autoclear;
 }
 
+// A manual-clear system event an override signalled when binding it: set, and still set on a second wait.
+static int event_set(uint64_t ev) {
+    static uint64_t try_wait;
+    if (!try_wait && !(try_wait = ldr_symbol(TRY_WAIT_SYSTEM_EVENT))) rt_fatal("probe-services: no %s", TRY_WAIT_SYSTEM_EVENT);
+    return (uint8_t)rt_call(gc, try_wait, 1, ev) && (uint8_t)rt_call(gc, try_wait, 1, ev);
+}
+
 static void probe_applet(void) {
     uint8_t *report = guest_alloc(0x100);
     uint64_t uid[2] = {1, 2};
@@ -357,21 +364,28 @@ static void probe_applet(void) {
           "AddInternetConnectionStatus");
     CHECK(CALL("nfp.Initialize", 0) == 0 && (uint32_t)CALL("nfp.GetState", 0) == 1, "nfp initialize");
     uint8_t handles[64];
-    int32_t count = 7;
-    CHECK((uint32_t)CALL("nfp.ListDevices", U(handles), U(&count), 4) == 0x8073 && count == 0, "nfp ListDevices");
+    int32_t count = 0;
+    CHECK((uint32_t)CALL("nfp.ListDevices", U(handles), U(&count), 4) == 0 && count == 1, "nfp ListDevices");
     uint64_t ev = U(guest_alloc(0x100));
     CHECK(CALL("nfp.AttachAvailabilityChangeEvent", ev) == 0, "AttachAvailabilityChangeEvent");
-    int nfp_event = event_works(ev, 0);
-    CHECK(nfp_event, "the nfp availability event does not work as a manual-clear system event");
+    // The emulated reader is there from the start (amiibo.c), so the availability event is set when it is attached.
+    int nfp_event = event_set(ev);
+    CHECK(nfp_event, "the nfp availability event is not set for the emulated reader, or clears itself");
     CHECK((uint32_t)CALL("nfp.GetDeviceState", U(handles)) == 0, "nfp device state");
-    static const char *const none[] = {"nfp.Mount", "nfp.GetNpadId", "nfp.AttachActivateEvent", "nfp.AttachDeactivateEvent",
-                                       "nfp.StartDetection", "nfp.StopDetection", "nfp.GetTagInfo", "nfp.GetModelInfo"};
+    static const char *const none[] = {"nfp.Mount", "nfp.GetTagInfo", "nfp.GetModelInfo"};
     uint8_t out[0x100];
     for (size_t i = 0; i < sizeof none / sizeof *none; i++) {
-        int first_is_handle = !strcmp(none[i], "nfp.Mount") || strstr(none[i], "Detection");
+        int first_is_handle = !strcmp(none[i], "nfp.Mount");
         uint64_t r = first_is_handle ? CALL(none[i], U(handles), 0, 0) : CALL(none[i], U(out), U(handles));
         CHECK((uint32_t)r == 0x8073, "%s: %#x, not device-not-found", none[i], (uint32_t)r);
     }
+    CHECK((uint32_t)CALL("nfp.GetNpadId", U(out), U(handles)) == 0, "nfp GetNpadId");
+    uint64_t activate = U(guest_alloc(0x100)), deactivate = U(guest_alloc(0x100));
+    CHECK(CALL("nfp.AttachActivateEvent", activate, U(handles)) == 0, "nfp AttachActivateEvent");
+    CHECK(CALL("nfp.AttachDeactivateEvent", deactivate, U(handles)) == 0, "nfp AttachDeactivateEvent");
+    CHECK(event_works(activate, 0), "the nfp activate event is set without an amiibo on the reader");
+    CHECK((uint32_t)CALL("nfp.StartDetection", U(handles)) == 0, "nfp StartDetection");
+    CHECK((uint32_t)CALL("nfp.StopDetection", U(handles)) == 0, "nfp StopDetection");
     CHECK(CALL("nfp.Finalize", 0) == 0 && (uint32_t)CALL("nfp.GetState", 0) == 0, "nfp finalize");
     CALL("err.ShowError", 0x2a8);
     CALL("nndiagStartup", 0);
@@ -380,8 +394,8 @@ static void probe_applet(void) {
     CALL("err.InitializeContextWriterApi", 0);
     CALL("pctl.Initialize", 0);
     CALL("diag.InitializeApplicationAbortObserver", 0);
-    printf("applet/prepo/nfp/err: launch parameter none, volume balance, play reports local, no NFC device, "
-           "availability event (bound through the SDK's CreateSystemEvent) %s\n", nfp_event ? "ok" : "FAILED");
+    printf("applet/prepo/nfp/err: launch parameter none, volume balance, play reports local, an NFC reader without "
+           "an amiibo, availability event (bound through the SDK's CreateSystemEvent) %s\n", nfp_event ? "ok" : "FAILED");
 }
 
 static void probe_account(void) {
@@ -484,8 +498,8 @@ static void probe_feedback(uint32_t pid, uint32_t style) {
           "six-axis handle %#x", sh[0]);
     CHECK((int32_t)CALL("hid.GetVibrationDeviceHandles", U(dual), 2, U(&zero), 4) == 2 && dual[0] == 5 &&
           dual[1] == 0x10005, "Joy-Con pair vibration handles %#x %#x (SDK: 0x5 0x10005)", dual[0], dual[1]);
-    char *keep_r = cfg_get("TOTK_RUMBLE") ? _strdup(cfg_get("TOTK_RUMBLE")) : NULL;
-    char *keep_m = cfg_get("TOTK_MOTION") ? _strdup(cfg_get("TOTK_MOTION")) : NULL;
+    char *keep_r = cfg_get("TOTK_RUMBLE") ? strdup(cfg_get("TOTK_RUMBLE")) : NULL;
+    char *keep_m = cfg_get("TOTK_MOTION") ? strdup(cfg_get("TOTK_MOTION")) : NULL;
     set_env("TOTK_RUMBLE", "0");
     set_env("TOTK_MOTION", "0");
     uint32_t none[2] = {0xdead, 0xdead}, six_off[2] = {0};
@@ -551,9 +565,21 @@ static void probe_feedback(uint32_t pid, uint32_t style) {
           near3(ms[0].dir + 3, -1, 0, 0, 0.01) && near3(ms[0].dir + 6, 0, 0, 1, 0.01),
           "fusion quarter turn: %d states, sampling %lld, angle %.4f rev, x axis (%.3f %.3f %.3f)", n,
           (long long)ms[0].sampling, (double)ms[0].angle[2], (double)ms[0].dir[0], (double)ms[0].dir[1], (double)ms[0].dir[2]);
+    double quarter = ms[0].angle[2];
     CHECK(motion_read(m, ms, 16, t + 300000000ull) == 0, "fusion states 300 ms after the last sample");
+    // StartSixAxisSensor again in the middle of the turn (the bow drawn again): the states from before it are gone, and
+    // the first one after it starts a fresh angle in a fresh frame; sampling numbers go on.
+    for (int i = 0; i < 250; i++) motion_feed(m, down, turn, t += 4000000);
+    motion_restart(m);
+    int same = motion_read(m, ms, 16, t + 1000000);
+    motion_feed(m, down, turn, t += 4000000);
+    int next = motion_read(m, ms, 16, t + 1000000);
+    CHECK(same == 0 && next == 1 && ms[0].sampling == 502 && fabs(ms[0].angle[2]) < 0.002 &&
+          near3(ms[0].dir, 1, 0, 0, 0.01),
+          "fusion restart: %d states in the frame of the Start, %d after one sample (sampling %lld, angle %.4f rev)", same,
+          next, (long long)ms[0].sampling, (double)ms[0].angle[2]);
     printf("hid feedback: vibration handles %#x %#x, six-axis %#x, at rest when stopped; fusion quarter turn %.4f rev\n",
-           vh[0], vh[1], sh[0], (double)ms[0].angle[2]);
+           vh[0], vh[1], sh[0], quarter);
 }
 
 static void probe_input(void) {
@@ -631,10 +657,10 @@ static void probe_media_gfx(void) {
            "vsync event %s\n", display, layer, window, vsync ? "bound (auto-clear)" : "FAILED");
 }
 
-// ---- software keyboard (swkbd_win.c): ShowKeyboardArg built by the SDK's own setters, as the horse naming does
+// ---- software keyboard (swkbd.c): ShowKeyboardArg built by the SDK's own setters, as the horse naming does
 enum { KB_TYPE = 0x00, KB_DISABLED = 0x1c, KB_HEADER = 0x24, KB_GUIDE = 0x1a8, KB_MAX_LEN = 0x3ac, KB_MIN_LEN = 0x3b0,
        KB_UTF8 = 0x3bd, KB_INIT_LEN = 0x3c4, STRING_SIZE = 0x7d4, SWKBD_CANCELED = 0x29f };
-#define ARG_WORK (RT_V143 ? 0x518 : 0x4d0)   // SDK 20.5 grew KeyboardConfig (swkbd_win.c)
+#define ARG_WORK (RT_V143 ? 0x518 : 0x4d0)   // SDK 20.5 grew KeyboardConfig (swkbd.c)
 #define ARG_WORK_SIZE (ARG_WORK + 8)
 #define ARG_SIZE (RT_V143 ? 0x548 : 0x500)
 
@@ -647,15 +673,13 @@ static uint64_t sdk(const char *name) {
 // NUL-terminated UTF-16 copy of utf8 in guest memory
 static uint16_t *u16(const char *utf8) {
     uint16_t *g = guest_alloc(0x200);
-    wchar_t w[128];
-    int n = MultiByteToWideChar(CP_UTF8, 0, utf8, -1, w, 128);
-    memcpy(g, w, (size_t)(n > 0 ? n : 1) * 2);
+    utf8_to_utf16(utf8, g, 128);
     return g;
 }
 
 static int u16_is(const uint16_t *a, const char *utf8) {
-    wchar_t b[128];
-    if (!MultiByteToWideChar(CP_UTF8, 0, utf8, -1, b, 128)) return 0;
+    uint16_t b[128];
+    utf8_to_utf16(utf8, b, 128);
     for (size_t i = 0;; i++) {
         if (a[i] != b[i]) return 0;
         if (!a[i]) return 1;
@@ -684,7 +708,7 @@ static void probe_swkbd(void) {
     str[0] = U(out), str[1] = STRING_SIZE;
     uint64_t w = U(work), ws = 0x1000;
 
-    // the SDK setters write where swkbd_win.c reads
+    // the SDK setters write where swkbd.c reads
     rt_call(gc, make, 2, U(arg), 2);
     rt_call(gc, header, 2, U(arg), U(u16("Hdr")));
     rt_call(gc, guide, 2, U(arg), U(u16("Gd")));
@@ -693,7 +717,7 @@ static void probe_swkbd(void) {
     int32_t init_len;
     memcpy(&init_len, arg + KB_INIT_LEN, 4);
     CHECK(u16_is((uint16_t *)(arg + KB_HEADER), "Hdr") && u16_is((uint16_t *)(arg + KB_GUIDE), "Gd") && init_len == 5,
-          "ShowKeyboardArg layout: header, guide or initial text not where swkbd_win.c reads them");
+          "ShowKeyboardArg layout: header, guide or initial text not where swkbd.c reads them");
 
     const char *def = ui_text(UI_SWKBD_DEFAULT_NAME);
     const KbCase cases[] = {
@@ -778,7 +802,7 @@ static void probe_menu_gate(void) {
 
 // ---- shared fonts: the extracted files when present (the missing case is a fatal child)
 static void probe_fonts(void) {
-    char dir[MAX_PATH], path[MAX_PATH + 32];
+    char dir[PLAT_PATH_MAX], path[PLAT_PATH_MAX + 32];
     snprintf(path, sizeof path, "%s/0-standard.bfttf", ov_shared_font_dir(dir, sizeof dir));
     FILE *f = fopen(path, "rb");
     if (!f) {
@@ -787,8 +811,8 @@ static void probe_fonts(void) {
     }
     uint8_t head[12];
     size_t got = fread(head, 1, sizeof head, f);
-    _fseeki64(f, 0, SEEK_END);
-    int64_t len = _ftelli64(f);
+    plat_fseek64(f, 0, SEEK_END);
+    int64_t len = plat_ftell64(f);
     fclose(f);
     uint64_t size = CALL("pl.GetSharedFontSize", 0), addr = CALL("pl.GetSharedFontAddress", 0);
     CHECK(got == sizeof head && size && size + 8 == (uint64_t)len, "shared font 0: size %llu, file %lld bytes",
@@ -801,13 +825,23 @@ static void probe_fonts(void) {
            (unsigned long long)size, path);
 }
 
-// The host catalog (ui_text.c): every menu id has its own English and Russian text, the software keyboard keeps its
-// game-language rows, and menu_text follows TOTK_MENU_LANG.
+// The host catalog (ui_text.c): every menu id has its own English, Russian, Brazilian Portuguese and Simplified
+// Chinese text, the software keyboard keeps its game-language rows, and menu_text follows TOTK_MENU_LANG.
 static void probe_menu_text(void) {
-    static const char *const langs[] = {"en", "ja", "fr", "de", "it", "es", "nl", "pt", "ru", "zh-Hans", "zh-Hant", "ko"};
+    static const char *const langs[] = {"en", "ja", "fr", "de", "it", "es", "nl", "pt", "ru", "zh-Hans", "zh-Hant", "ko",
+                                        "pt-BR"};
     for (int id = UI_MENU_FIRST; id <= UI_MENU_LAST_ID; id++) {
-        CHECK(ui_text_defined("en", (UiTextId)id) && ui_text_defined("ru", (UiTextId)id), "menu text id %d lacks en or ru", id);
-        CHECK(*ui_text_in("en", (UiTextId)id) && *ui_text_in("ru", (UiTextId)id), "menu text id %d is empty", id);
+        CHECK(ui_text_defined("en", (UiTextId)id) && ui_text_defined("ru", (UiTextId)id) &&
+              ui_text_defined("pt-BR", (UiTextId)id), "menu text id %d lacks en, ru or pt-BR", id);
+        CHECK(*ui_text_in("en", (UiTextId)id) && *ui_text_in("ru", (UiTextId)id) && *ui_text_in("pt-BR", (UiTextId)id),
+              "menu text id %d is empty", id);
+        // the description pane keeps the whole text and a note after it (option_rows.cpp desc_set)
+        CHECK(strlen(ui_text_in("en", (UiTextId)id)) + 256 < UI_DESC_BYTES &&
+              strlen(ui_text_in("ru", (UiTextId)id)) + 256 < UI_DESC_BYTES &&
+              strlen(ui_text_in("pt-BR", (UiTextId)id)) + 256 < UI_DESC_BYTES &&
+              strlen(ui_text_in("zh-Hans", (UiTextId)id)) + 256 < UI_DESC_BYTES,
+              "menu text id %d is too long for the description pane", id);
+        CHECK(ui_text_defined("zh-Hans", (UiTextId)id), "menu text id %d lacks Simplified Chinese", id);
     }
     CHECK(!ui_text_defined("en", UI_TEXT_COUNT) && !*ui_text_in("ru", UI_TEXT_COUNT), "an id past the catalog gives text");
     // other languages fall back to English for the menu, and keep their own keyboard texts
@@ -815,22 +849,31 @@ static void probe_menu_text(void) {
     CHECK(!strcmp(ui_text_in("ru", UI_SWKBD_OK), "ОК") && !strcmp(ui_text_in("de", UI_SWKBD_CANCEL), "Abbrechen") &&
           !strcmp(ui_text_in("en", UI_SWKBD_OK), "OK"), "keyboard texts changed");
     // language names: the same string in every row
-    for (int id = UI_MENU_LANGNAME_EN; id <= UI_MENU_LANGNAME_KO; id++)
+    for (int id = UI_MENU_LANGNAME_EN; id <= UI_MENU_LANGNAME_PT_BR; id++)
         for (size_t i = 1; i < sizeof langs / sizeof *langs; i++)
             CHECK(!strcmp(ui_text_in(langs[i], (UiTextId)id), ui_text_in("en", (UiTextId)id)), "language name %d differs in %s", id, langs[i]);
     CHECK(!strcmp(ui_text_in("en", UI_MENU_LANGNAME_RU), "Русский"), "Russian is not shown as Russian");
     // the overlay formats keep their conversions
     CHECK(strstr(ui_text_in("ru", UI_MENU_OV_GAME_PCT), "%.0f%%") && strstr(ui_text_in("ru", UI_MENU_OV_MAX_MS), "%.1f"),
           "overlay format lost its conversion");
+    CHECK(strstr(ui_text_in("pt-BR", UI_MENU_OV_GAME_PCT), "%.0f%%") &&
+          strstr(ui_text_in("pt-BR", UI_MENU_OV_MAX_MS), "%.1f"), "pt-BR overlay format lost its conversion");
+    // a Brazilian game language gets the Brazilian keyboard row, Portugal's Portuguese keeps its own
+    CHECK(!strcmp(ui_text_lang("pt-BR"), "pt-BR") && !strcmp(ui_text_lang("pt"), "pt") &&
+          strcmp(ui_text_in("pt-BR", UI_SWKBD_PROMPT), ui_text_in("pt", UI_SWKBD_PROMPT)), "pt-BR keyboard row not used");
     // menu_text follows the setting live
     cfg_set("TOTK_MENU_LANG", "ru");
     CHECK(menu_text(UI_MENU_CONTINUE) == ui_text_in("ru", UI_MENU_CONTINUE), "menu_text ignores MENU_LANG=ru");
+    cfg_set("TOTK_MENU_LANG", "pt-BR");
+    CHECK(menu_text(UI_MENU_CONTINUE) == ui_text_in("pt-BR", UI_MENU_CONTINUE), "menu_text ignores MENU_LANG=pt-BR");
     cfg_set("TOTK_MENU_LANG", "en");
     CHECK(menu_text(UI_MENU_CONTINUE) == ui_text_in("en", UI_MENU_CONTINUE), "menu_text did not follow MENU_LANG=en");
+    cfg_set("TOTK_MENU_LANG", "zh-Hans");
+    CHECK(menu_text(UI_MENU_TITLE) == ui_text_in("zh-Hans", UI_MENU_TITLE), "menu_text ignores MENU_LANG=zh-Hans");
     cfg_set("TOTK_MENU_LANG", "");
-    const char *sys = plat_ui_language();
-    int ru = !strncmp(sys, "ru", 2);
-    CHECK(menu_text(UI_MENU_CONTINUE) == ui_text_in(ru ? "ru" : "en", UI_MENU_CONTINUE), "menu_text auto ignores the system language");
+    const char *sys_lang = ui_text_lang(plat_ui_language());
+    const char *auto_lang = ui_text_defined(sys_lang, UI_MENU_TITLE) ? sys_lang : "en";
+    CHECK(menu_text(UI_MENU_CONTINUE) == ui_text_in(auto_lang, UI_MENU_CONTINUE), "menu_text auto ignores the system language");
 }
 
 static void probe_main(Cpu *c) {
@@ -852,37 +895,14 @@ static void probe_main(Cpu *c) {
 // ---- child processes
 // Runs this executable again with the same command line and TOTK_PROBE_SERVICES_CHILD=<mode>; its stdout and stderr
 // into out. Returns the exit code.
-static DWORD run_child(const char *mode, const char *env, char *out, size_t cap) {
-    SECURITY_ATTRIBUTES sa = {sizeof sa, NULL, TRUE};
-    HANDLE rd, wr;
-    if (!CreatePipe(&rd, &wr, &sa, 0)) rt_fatal("probe-services: CreatePipe (error %lu)", GetLastError());
-    SetHandleInformation(rd, HANDLE_FLAG_INHERIT, 0);
-    STARTUPINFOW si = {.cb = sizeof si, .dwFlags = STARTF_USESTDHANDLES, .hStdOutput = wr, .hStdError = wr};
-    PROCESS_INFORMATION pi;
-    wchar_t *cmd = _wcsdup(GetCommandLineW());
-    SetEnvironmentVariableA(CHILD_ENV, mode);
+static uint32_t run_child(const char *mode, const char *env, char *out, size_t cap) {
     char name[64] = "";
     const char *eq = env ? strchr(env, '=') : NULL;
-    if (eq) snprintf(name, sizeof name, "%.*s", (int)(eq - env), env), SetEnvironmentVariableA(name, eq + 1);
-    BOOL ok = CreateProcessW(NULL, cmd, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi);
-    SetEnvironmentVariableA(CHILD_ENV, NULL);
-    if (eq) SetEnvironmentVariableA(name, NULL);
-    free(cmd);
-    CloseHandle(wr);
-    if (!ok) rt_fatal("probe-services: CreateProcess for the %s child (error %lu)", mode, GetLastError());
-    size_t n = 0;
-    DWORD got;
-    while (n + 1 < cap && ReadFile(rd, out + n, (DWORD)(cap - 1 - n), &got, NULL) && got) n += got;
-    out[n] = 0;
-    char sink[512];
-    while (ReadFile(rd, sink, sizeof sink, &got, NULL) && got) {}
-    CloseHandle(rd);
-    WaitForSingleObject(pi.hProcess, INFINITE);
-    DWORD code = 1;
-    GetExitCodeProcess(pi.hProcess, &code);
-    CloseHandle(pi.hProcess);
-    CloseHandle(pi.hThread);
-    return code;
+    if (eq) snprintf(name, sizeof name, "%.*s", (int)(eq - env), env), plat_setenv(name, eq + 1);
+    int code = plat_run_self(CHILD_ENV, mode, out, cap, 0);
+    if (eq) plat_setenv(name, NULL);
+    if (code < 0) rt_fatal("probe-services: cannot start the %s child", mode);
+    return (uint32_t)code;
 }
 
 static const char *child_mode;
@@ -923,12 +943,12 @@ static int run_as_child(const char *mode) {
 
 static void probe_children(void) {
     static char out[16384];
-    DWORD code = run_child("uid", NULL, out, sizeof out);
+    uint32_t code = run_child("uid", NULL, out, sizeof out);
     unsigned long long hi = 0, lo = 0;
     const char *p = strstr(out, "child uid ");
     int parsed = p && sscanf(p + 10, "%16llx%16llx", &hi, &lo) == 2;
     int same = parsed && code == 0 && hi == probe_uid[1] && lo == probe_uid[0];
-    CHECK(same, "the second run's account UID differs (exit %lu): %s", code, out);
+    CHECK(same, "the second run's account UID differs (exit %u): %s", code, out);
     printf("account: UID %016llx%016llx in %s/account.uid, the same in a second run: %s\n",
            (unsigned long long)probe_uid[1], (unsigned long long)probe_uid[0], rt_config()->profile, same ? "yes" : "NO");
 
@@ -938,7 +958,7 @@ static void probe_children(void) {
     p = strstr(out, "child nvn: ");
     parsed = p && sscanf(p, "child nvn: known %llx expected %llx unknown %llx", &known, &expected, &unknown) == 3;
     int nvn_ok = parsed && code == 0 && known && known == expected && unknown == 0;
-    CHECK(nvn_ok, "child nvn: exit %lu, output: %s", code, out);
+    CHECK(nvn_ok, "child nvn: exit %u, output: %s", code, out);
     if (nvn_ok) ov("nvnBootstrapLoader")->calls++;
     printf("nvnBootstrapLoader: nvnDeviceGetProcAddress -> %#llx (proc table %#llx), unknown name -> %#llx\n", known,
            expected, unknown);
@@ -946,11 +966,11 @@ static void probe_children(void) {
     for (int i = 0; i < NFATAL; i++) {
         code = run_child(fatals[i].child, fatals[i].env, out, sizeof out);
         int ok = code == 70 && strstr(out, fatals[i].fatal);
-        CHECK(ok, "child %s: exit %lu, output: %s", fatals[i].child, code, out);
+        CHECK(ok, "child %s: exit %u, output: %s", fatals[i].child, code, out);
         if (ok) ov(fatals[i].key)->calls++;
         const char *line = strstr(out, "FATAL: ");
         int len = line ? (int)strcspn(line, "\r\n") : 0;
-        printf("fatal stub %-20s child exit %lu: %.*s\n", fatals[i].key, code, len, line ? line : "(no FATAL line)");
+        printf("fatal stub %-20s child exit %u: %.*s\n", fatals[i].key, code, len, line ? line : "(no FATAL line)");
     }
 }
 
