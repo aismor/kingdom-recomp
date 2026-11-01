@@ -28,7 +28,7 @@ static const char *const text_en[UI_TEXT_COUNT] = {
     SWKBD("Text entry", "Enter a name", "Horse", "OK", "Cancel", "Controller: A = OK, B = Cancel"),
 
     [UI_MENU_TITLE] = "Settings",
-    [UI_MENU_TAB_SCREEN] = "Screen", [UI_MENU_TAB_GAME] = "Game", [UI_MENU_TAB_MODS] = "Mods",
+    [UI_MENU_TAB_SCREEN] = "Screen", [UI_MENU_TAB_GAME] = "Game", [UI_MENU_TAB_MODS] = "Mods", [UI_MENU_TAB_CHEATS] = "Cheats",
     [UI_MENU_TAB_SOUND] = "Sound", [UI_MENU_TAB_CONTROLS] = "Controls", [UI_MENU_TAB_MENU] = "Menu", [UI_MENU_TAB_ADVANCED] = "Advanced",
     [UI_MENU_CONTINUE] = "Continue", [UI_MENU_QUIT] = "Quit game",
     [UI_MENU_ON] = "On", [UI_MENU_OFF] = "Off", [UI_MENU_AUTO] = "Automatic", [UI_MENU_DEFAULT_MARK] = "default",
@@ -81,13 +81,15 @@ static const char *const text_en[UI_TEXT_COUNT] = {
     [UI_MENU_GAME_LANG_AUTO] = "Automatic",
     [UI_MENU_OPERATION_MODE] = "Console mode",
     [UI_MENU_OPERATION_MODE_DESC] = "Whether the game thinks it runs docked or handheld.",
-    [UI_MENU_MODS_INTRO] =
-        "Built-in mods apply immediately. Drop RomFS mod folders into the mods folder (each with a romfs/ tree, as in "
-        "Eden); enable them here and restart to apply.",
-    [UI_MENU_MODS_EMPTY] = "No RomFS mods found. Built-in mods still appear when listed above.",
+    [UI_MENU_MODS_INTRO] = "Drop RomFS mod folders into the mods folder (each with a romfs/ tree, as in Eden); enable "
+                           "them here and restart to apply. Voice-over mods remain on this tab.",
+    [UI_MENU_MODS_EMPTY] = "No RomFS mods found.",
     [UI_MENU_MODS_ROW_DESC] = "RomFS files from this folder replace game data on the next start.",
     [UI_MENU_MODS_OPEN] = "Open mods folder",
     [UI_MENU_MODS_OPEN_DESC] = "Opens the folder where mod directories go.",
+    [UI_MENU_CHEATS_INTRO] = "Only cheats compatible with the current game update are shown. Changes apply immediately "
+                             "and are saved separately for each update.",
+    [UI_MENU_CHEATS_EMPTY] = "No built-in cheats are available for this game update.",
     [UI_MENU_MOD_STAMINA] = "Infinite stamina (sprint / climb)",
     [UI_MENU_MOD_STAMINA_DESC] = "Stamina no longer drains while running or climbing. Applies immediately.",
     [UI_MENU_MOD_HORSE_STAMINA] = "Infinite horse stamina",
@@ -108,6 +110,8 @@ static const char *const text_en[UI_TEXT_COUNT] = {
     [UI_MENU_MOD_FOOD_DESC] = "Food items in the inventory are not consumed. Applies immediately.",
     [UI_MENU_MOD_PICKUP_8X] = "Item pickup x8",
     [UI_MENU_MOD_PICKUP_8X_DESC] = "Pick up eight times as many items at once. Applies immediately.",
+    [UI_MENU_CHEAT_ITEMS_999] = "Items x999",
+    [UI_MENU_CHEAT_ITEMS_999_DESC] = "Sets an affected inventory quantity to 999. Applies immediately.",
     [UI_MENU_MOD_FOOD_BUFF] = "Infinite food buff timer",
     [UI_MENU_MOD_FOOD_BUFF_DESC] = "Timed food bonuses stay active. Applies immediately.",
     [UI_MENU_MOD_BATTERY] = "Infinite battery",
@@ -275,7 +279,7 @@ static const char *const text_ru[UI_TEXT_COUNT] = {
     SWKBD("Ввод текста", "Введите имя", "Лошадь", "ОК", "Отмена", "Контроллер: A — ОК, B — отмена"),
 
     [UI_MENU_TITLE] = "Настройки",
-    [UI_MENU_TAB_SCREEN] = "Экран", [UI_MENU_TAB_GAME] = "Игра", [UI_MENU_TAB_MODS] = "Моды",
+    [UI_MENU_TAB_SCREEN] = "Экран", [UI_MENU_TAB_GAME] = "Игра", [UI_MENU_TAB_MODS] = "Моды", [UI_MENU_TAB_CHEATS] = "Читы",
     [UI_MENU_TAB_SOUND] = "Звук", [UI_MENU_TAB_CONTROLS] = "Управление", [UI_MENU_TAB_MENU] = "Меню", [UI_MENU_TAB_ADVANCED] = "Дополнительно",
     [UI_MENU_CONTINUE] = "Продолжить", [UI_MENU_QUIT] = "Выйти из игры",
     [UI_MENU_ON] = "Вкл.", [UI_MENU_OFF] = "Выкл.", [UI_MENU_AUTO] = "Автоматически",
@@ -329,13 +333,15 @@ static const char *const text_ru[UI_TEXT_COUNT] = {
     [UI_MENU_GAME_LANG_AUTO] = "Автоматически",
     [UI_MENU_OPERATION_MODE] = "Режим консоли",
     [UI_MENU_OPERATION_MODE_DESC] = "Игра считает, что консоль в док-станции или в портативном режиме.",
-    [UI_MENU_MODS_INTRO] =
-        "Встроенные моды включаются сразу. Папки RomFS-модов кладите в mods/ (в каждой — romfs/, как в Eden); после "
-        "включения перезапустите игру.",
-    [UI_MENU_MODS_EMPTY] = "RomFS-модов нет. Встроенные моды всё равно отображаются выше.",
+    [UI_MENU_MODS_INTRO] = "Папки RomFS-модов кладите в mods/ (в каждой — romfs/, как в Eden); после включения "
+                           "перезапустите игру. Моды озвучки остаются на этой вкладке.",
+    [UI_MENU_MODS_EMPTY] = "RomFS-модов нет.",
     [UI_MENU_MODS_ROW_DESC] = "Файлы RomFS из этой папки заменят данные игры при следующем запуске.",
     [UI_MENU_MODS_OPEN] = "Открыть папку mods",
     [UI_MENU_MODS_OPEN_DESC] = "Открывает папку, куда кладут каталоги модов.",
+    [UI_MENU_CHEATS_INTRO] = "Показаны только читы для текущего обновления игры. Изменения применяются сразу и "
+                             "сохраняются отдельно для каждого обновления.",
+    [UI_MENU_CHEATS_EMPTY] = "Для этого обновления игры встроенных читов нет.",
     [UI_MENU_MOD_STAMINA] = "Бесконечная выносливость (бег / лазание)",
     [UI_MENU_MOD_STAMINA_DESC] = "Выносливость не тратится при беге и лазании. Включается сразу.",
     [UI_MENU_MOD_HORSE_STAMINA] = "Бесконечная выносливость лошади",
@@ -356,6 +362,8 @@ static const char *const text_ru[UI_TEXT_COUNT] = {
     [UI_MENU_MOD_FOOD_DESC] = "Еда в инвентаре не расходуется. Включается сразу.",
     [UI_MENU_MOD_PICKUP_8X] = "Подбор предметов x8",
     [UI_MENU_MOD_PICKUP_8X_DESC] = "Подбираете в 8 раз больше за раз. Включается сразу.",
+    [UI_MENU_CHEAT_ITEMS_999] = "Предметы x999",
+    [UI_MENU_CHEAT_ITEMS_999_DESC] = "Устанавливает количество затронутого предмета равным 999. Включается сразу.",
     [UI_MENU_MOD_FOOD_BUFF] = "Бесконечный бафф еды",
     [UI_MENU_MOD_FOOD_BUFF_DESC] = "Временные бонусы от еды не истекают. Включается сразу.",
     [UI_MENU_MOD_BATTERY] = "Бесконечная батарея",
@@ -528,7 +536,7 @@ static const char *const text_pt[UI_TEXT_COUNT] = {
     SWKBD("Inserir texto", "Digite um nome", "Cavalo", "OK", "Cancelar", "Controle: A = OK, B = Cancelar"),
 
     [UI_MENU_TITLE] = "Configurações",
-    [UI_MENU_TAB_SCREEN] = "Tela", [UI_MENU_TAB_GAME] = "Jogo", [UI_MENU_TAB_MODS] = "Mods",
+    [UI_MENU_TAB_SCREEN] = "Tela", [UI_MENU_TAB_GAME] = "Jogo", [UI_MENU_TAB_MODS] = "Mods", [UI_MENU_TAB_CHEATS] = "Cheats",
     [UI_MENU_TAB_SOUND] = "Som", [UI_MENU_TAB_CONTROLS] = "Controles", [UI_MENU_TAB_MENU] = "Menu", [UI_MENU_TAB_ADVANCED] = "Avançado",
     [UI_MENU_CONTINUE] = "Continuar", [UI_MENU_QUIT] = "Sair do jogo",
     [UI_MENU_ON] = "Ligado", [UI_MENU_OFF] = "Desligado", [UI_MENU_AUTO] = "Automático",
@@ -582,13 +590,15 @@ static const char *const text_pt[UI_TEXT_COUNT] = {
     [UI_MENU_GAME_LANG_AUTO] = "Automático",
     [UI_MENU_OPERATION_MODE] = "Modo do console",
     [UI_MENU_OPERATION_MODE_DESC] = "Se o jogo acha que roda na base ou no modo portátil.",
-    [UI_MENU_MODS_INTRO] =
-        "Mods integrados aplicam na hora. Coloque mods RomFS na pasta mods (cada um com romfs/, como no Eden); ative "
-        "aqui e reinicie o jogo para aplicar.",
-    [UI_MENU_MODS_EMPTY] = "Nenhum mod RomFS encontrado. Mods integrados aparecem acima quando existirem.",
+    [UI_MENU_MODS_INTRO] = "Coloque mods RomFS na pasta mods (cada um com romfs/, como no Eden); ative aqui e reinicie "
+                           "o jogo para aplicar. Mods de dublagem continuam nesta aba.",
+    [UI_MENU_MODS_EMPTY] = "Nenhum mod RomFS encontrado.",
     [UI_MENU_MODS_ROW_DESC] = "Arquivos RomFS desta pasta substituem dados do jogo na próxima inicialização.",
     [UI_MENU_MODS_OPEN] = "Abrir pasta de mods",
     [UI_MENU_MODS_OPEN_DESC] = "Abre a pasta onde ficam os diretórios dos mods.",
+    [UI_MENU_CHEATS_INTRO] = "Somente cheats compatíveis com a atualização atual do jogo são exibidos. Alterações "
+                             "aplicam na hora e são salvas separadamente para cada versão.",
+    [UI_MENU_CHEATS_EMPTY] = "Nenhum cheat integrado está disponível para esta atualização do jogo.",
     [UI_MENU_MOD_STAMINA] = "Vigor infinito (correr / escalar)",
     [UI_MENU_MOD_STAMINA_DESC] = "O vigor não gasta ao correr ou escalar. Aplica na hora.",
     [UI_MENU_MOD_HORSE_STAMINA] = "Vigor infinito do cavalo",
@@ -609,6 +619,8 @@ static const char *const text_pt[UI_TEXT_COUNT] = {
     [UI_MENU_MOD_FOOD_DESC] = "Itens de comida no inventário não são consumidos. Aplica na hora.",
     [UI_MENU_MOD_PICKUP_8X] = "Coleta x8",
     [UI_MENU_MOD_PICKUP_8X_DESC] = "Pega oito vezes mais itens de uma vez. Aplica na hora.",
+    [UI_MENU_CHEAT_ITEMS_999] = "Itens x999",
+    [UI_MENU_CHEAT_ITEMS_999_DESC] = "Define a quantidade afetada do inventário como 999. Aplica na hora.",
     [UI_MENU_MOD_FOOD_BUFF] = "Bônus de comida infinito",
     [UI_MENU_MOD_FOOD_BUFF_DESC] = "Bônus temporários de comida não expiram. Aplica na hora.",
     [UI_MENU_MOD_BATTERY] = "Bateria infinita",

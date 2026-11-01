@@ -27,6 +27,7 @@ extern "C" {
 #include "input.h"
 #include "input_map.h"
 #include "mods.h"
+#include "cheats.h"
 #include "perfmon.h"
 #include "platform/platform.h"
 #include "sysinfo.h"
@@ -300,7 +301,7 @@ extern "C" void menu_vk_release(void) {
 // TOTK_MENU_TEST_SET=<frame>:<key>=<value>[,<key>=<value>...][;<frame>:...]: cfg_set of each key (TOTK_ prefix
 // optional) at that presented frame; changes live settings with no input, menu open or not. totk.ini is written only by
 // the pseudo-key SAVE=1 (cfg_save, as a row change does; a failed write shows the menu's save note).
-enum { TAB_SCREEN, TAB_GAME, TAB_MODS, TAB_SOUND, TAB_CONTROLS, TAB_MENU, TAB_ADVANCED, TAB_COUNT };
+enum { TAB_SCREEN, TAB_GAME, TAB_MODS, TAB_CHEATS, TAB_SOUND, TAB_CONTROLS, TAB_MENU, TAB_ADVANCED, TAB_COUNT };
 enum { TEST_PAGE_FRAMES = 30, TEST_SETS = 16 };
 struct TestSet { uint64_t frame; char key[64], value[64]; };
 static struct {
@@ -552,21 +553,16 @@ static void tab_mods(float scale) {
     g_mod_n = mods_scan(g_mod_entries, MODS_MAX);
     opt_begin("##mods", scale);
     opt_text(UI_MENU_MODS_INTRO, false);
-    int romfs_mods = 0;
-    for (int i = 0; i < g_mod_n; i++)
-        if (g_mod_entries[i].kind == MOD_KIND_ROMFS) romfs_mods++;
-    if (!romfs_mods) opt_text(UI_MENU_MODS_EMPTY, false);
+    if (!g_mod_n) opt_text(UI_MENU_MODS_EMPTY, false);
     for (int i = 0; i < g_mod_n; i++) {
         ImGui::PushID(i);
-        const char *label = g_mod_entries[i].kind == MOD_KIND_BUILTIN && g_mod_entries[i].label
-                                ? menu_text(g_mod_entries[i].label)
-                                : g_mod_entries[i].name;
+        const char *label = g_mod_entries[i].name;
         bool on = g_mod_entries[i].enabled != 0;
         if (ImGui::Checkbox(label, &on)) {
             const int was = g_mod_entries[i].enabled;
             g_mod_entries[i].enabled = on ? 1 : 0;
             mods_apply(g_mod_entries, g_mod_n);
-            if (g_mod_entries[i].kind == MOD_KIND_ROMFS && was != g_mod_entries[i].enabled) g_mods_restart_note = 1;
+            if (was != g_mod_entries[i].enabled) g_mods_restart_note = 1;
         }
         if (ImGui::IsItemHovered() && g_mod_entries[i].desc) ImGui::SetTooltip("%s", menu_text(g_mod_entries[i].desc));
         ImGui::PopID();
@@ -575,6 +571,28 @@ static void tab_mods(float scale) {
     if (opt_button("##mods_open", UI_MENU_MODS_OPEN, UI_MENU_MODS_OPEN_DESC)) {
         char dir[1024];
         if (mods_folder(dir, sizeof dir)) plat_open_folder(dir);
+    }
+    opt_end();
+}
+
+static CheatEntry g_cheat_entries[CHEATS_MAX];
+static int g_cheat_n;
+
+static void tab_cheats(float scale) {
+    g_cheat_n = cheats_scan(g_cheat_entries, CHEATS_MAX);
+    opt_begin("##cheats", scale);
+    opt_text(UI_MENU_CHEATS_INTRO, false);
+    if (!g_cheat_n) opt_text(UI_MENU_CHEATS_EMPTY, false);
+    for (int i = 0; i < g_cheat_n; i++) {
+        ImGui::PushID(i);
+        bool on = g_cheat_entries[i].enabled != 0;
+        if (ImGui::Checkbox(menu_text(g_cheat_entries[i].label), &on)) {
+            g_cheat_entries[i].enabled = on ? 1 : 0;
+            cheats_apply(g_cheat_entries, g_cheat_n);
+        }
+        if (ImGui::IsItemHovered() && g_cheat_entries[i].desc)
+            ImGui::SetTooltip("%s", menu_text(g_cheat_entries[i].desc));
+        ImGui::PopID();
     }
     opt_end();
 }
@@ -773,7 +791,7 @@ static void tab_advanced(float scale) {
     }
 }
 
-static const UiTextId kTabNames[TAB_COUNT] = {UI_MENU_TAB_SCREEN, UI_MENU_TAB_GAME, UI_MENU_TAB_MODS,
+static const UiTextId kTabNames[TAB_COUNT] = {UI_MENU_TAB_SCREEN, UI_MENU_TAB_GAME, UI_MENU_TAB_MODS, UI_MENU_TAB_CHEATS,
                                               UI_MENU_TAB_SOUND, UI_MENU_TAB_CONTROLS, UI_MENU_TAB_MENU,
                                               UI_MENU_TAB_ADVANCED};
 static int g_tab;               // the tab shown
@@ -825,6 +843,7 @@ static void layout_menu(uint32_t w, uint32_t h, float scale) {
             case TAB_SCREEN: tab_screen(scale); break;
             case TAB_GAME: tab_game(scale); break;
             case TAB_MODS: tab_mods(scale); break;
+            case TAB_CHEATS: tab_cheats(scale); break;
             case TAB_SOUND: tab_sound(scale); break;
             case TAB_CONTROLS: tab_controls(scale); break;
             case TAB_MENU: tab_menu(scale); break;
