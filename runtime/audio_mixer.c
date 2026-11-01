@@ -9,13 +9,12 @@
 // single-producer single-consumer ring. The SDL audio thread drains that ring without taking any lock: an empty ring
 // plays silence and never blocks the render thread or the guest. TOTK_AUDIO=none (or TOTK_AUDIO_OFF) mixes without a
 // device; TOTK_AUDIO_PREFILL_MS (0..500, default 20) is the queued audio the output waits for after start or underrun.
-// The device's clock paces the render thread, as the audio hardware paces the Switch's DSP (audio_mixer_pace_ns): a
-// frame is rendered when the ring holds less than the output target, max(prefill, two device periods), so the queue and
-// the delay from the game to the speakers stay there and the host and device clocks cannot drift apart. LASRecomp and
-// SavageWindRecomp pace their renderers by the SDL stream the same way. Without a device, while the renderer is
-// stopped and while the device takes nothing (a stall), the render thread keeps real time on its own timer; what piled
-// up meanwhile is skipped on the SDL thread once the device resumes (more than QUEUE_SLACK_MS above the target plus the
-// device's request), as MacNativeGames' audio_mixer.c trims its ring after a device stall.
+// The render thread keeps real time on its own fixed 5 ms timer (audren.c, render_thread), so the game's renderer event
+// ticks evenly whatever the device does. Pacing the frames by the ring's fill instead renders them in bursts, and above
+// 60 fps a heavy moment (an explosion) then left the game's sound running behind the picture for good. Audio that piles
+// up because the device took less than the timer gave (a stall, or the two clocks drifting) is skipped on the SDL
+// thread: more than QUEUE_SLACK_MS above the output target, max(prefill, two device periods), plus the device's
+// request, as MacNativeGames' audio_mixer.c trims its ring after a device stall.
 #include <math.h>
 #include <stdatomic.h>
 #include <stdio.h>
@@ -34,7 +33,6 @@
 #define MAX_FRAME 1024
 #define RING_FRAMES 16384            // stereo frames, about 340 ms at 48 kHz
 #define QUEUE_SLACK_MS 40            // queued audio above the target plus the device's request that ring_pull skips
-#define STALL_MS 50                  // the device took nothing this long (at least 4 periods): the timer paces
 #define SPLITTER_UNUSED 0xffffffffu
 #define dm_guest_write_prepare(p, n) ((void)(p), (void)(n))   // guest memory is plain host memory on Windows
 
@@ -55,8 +53,6 @@ typedef struct Mixer {
     _Atomic uint64_t wr, rd, underruns, overruns, missing_frames, callback_frames, callback_nonzero, skipped_frames;
     _Atomic int playing; int ready;                // ready: the callback's own state
     int target, period;                            // output target and device period, frames (output_open)
-    uint64_t stall_ns;
-    _Atomic uint64_t pulled_ns;                    // kern_now_ns of the device's last request, 0 before the first
     _Atomic uint64_t flush_until; _Atomic unsigned stop_epoch; unsigned callback_epoch;
     EffectState *effect; int *effect_order; unsigned effect_reported;
     uint64_t *sink_address; uint32_t *sink_size, *sink_offset, *sink_old, *sink_written;
@@ -158,7 +154,6 @@ static void SDLCALL sdl_pull(void *user, SDL_AudioStream *stream, int additional
     (void)total;
     Mixer *m = user;
     float tmp[2 * 1024];
-    atomic_store_explicit(&m->pulled_ns, kern_now_ns(), memory_order_release);
     while (additional > 0) {
         uint32_t frames = (uint32_t)additional / (2 * sizeof(float));
         if (!frames) break;
@@ -198,22 +193,9 @@ static void output_open(Mixer *m, int rate) {
     m->period = period;
     m->target = m->frame * m->prefill > 2 * period ? m->frame * m->prefill : 2 * period;
     if (m->target > RING_FRAMES / 2) m->target = RING_FRAMES / 2;
-    uint64_t period_ns = (uint64_t)period * 1000000000ull / (uint64_t)rate;
-    m->stall_ns = 4 * period_ns > STALL_MS * 1000000ull ? 4 * period_ns : STALL_MS * 1000000ull;
     const char *name = SDL_GetAudioDeviceName(SDL_GetAudioStreamDevice(m->stream));
-    rt_log("audio: SDL device '%s' opened, %d Hz stereo float, prefill %d ms, device period %d frames; the device paces "
-           "rendering at %.1f ms queued", name ? name : "?", rate, m->prefill * 5, period, m->target * 1000.0 / rate);
-}
-
-int64_t audio_mixer_pace_ns(AudioRenderer *r, uint64_t now) {
-    Mixer *m = r->mixer;
-    if (!m || !m->device_ok || !atomic_load_explicit(&m->playing, memory_order_acquire)) return -1;
-    uint64_t pulled = atomic_load_explicit(&m->pulled_ns, memory_order_acquire);
-    if (!pulled || (now > pulled && now - pulled > m->stall_ns)) return -1;
-    uint64_t have = atomic_load(&m->wr) - atomic_load_explicit(&m->rd, memory_order_acquire);
-    if (have < (uint64_t)m->target) return 0;
-    int64_t ns = (int64_t)((have - (uint64_t)m->target + 1) * 1000000000ull / (uint64_t)m->rate);
-    return ns < 500000 ? 500000 : ns;   // until the device has taken it below the target
+    rt_log("audio: SDL device '%s' opened, %d Hz stereo float, prefill %d ms, device period %d frames, queue target "
+           "%.1f ms", name ? name : "?", rate, m->prefill * 5, period, m->target * 1000.0 / rate);
 }
 
 // Render thread only.

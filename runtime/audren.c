@@ -316,8 +316,7 @@ static void request_update(AudioRenderer *r, const uint8_t *input, uint64_t in_s
     plat_mutex_unlock(&r->lock);
 }
 
-// ---- render tick: one frame each time the output device has taken the ring below its target (audio_mixer_pace_ns),
-// or every sample_count / sample_rate seconds of the host clock without a device, while stopped or while it stalls
+// ---- render tick: one frame every sample_count / sample_rate seconds of the host clock
 static void advance_voice(AudioRenderer *r, ServerVoice *v, double out_seconds) {
     if (!v->in.in_use || v->state != SV_STARTED || !v->in.sample_rate) return;
     double want = v->fraction + out_seconds * v->in.sample_rate * (v->in.pitch > 0 ? v->in.pitch : 1.0);
@@ -357,18 +356,9 @@ static void render_thread(void *p) {
     uint64_t next = kern_now_ns();
     while (plat_cas32(&r->running, 0, 0)) {
         uint64_t now = kern_now_ns();
-        int64_t pace = audio_mixer_pace_ns(r, now);
-        if (pace > 0) {
-            plat_wait_ns((uint64_t)pace);
-            continue;
-        }
-        if (pace == 0) {
-            next = now + frame_ns;   // where the timer goes on if the device stops pacing
-        } else {
-            if (next > now) plat_wait_ns(next - now);
-            else if (now - next > 100000000ull) next = now;   // fell far behind (debugger, sleep): resynchronise
-            next += frame_ns;
-        }
+        if (next > now) plat_wait_ns(next - now);
+        else if (now - next > 100000000ull) next = now;   // fell far behind (debugger, sleep): resynchronise
+        next += frame_ns;
         plat_mutex_lock(&r->lock);
         if (r->state == 0) {
             voices_prepare(r);
