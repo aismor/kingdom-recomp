@@ -5,7 +5,7 @@
 // (linear texel layout, GENERAL layout; block-linear storage is only converted when a mirrored texture is uploaded). So a
 // copy is one Vulkan transfer command and the pitch of a buffer side comes from the payload (OP_COPY_STRIDE or the
 // tight row). Every copy ends the open pass and starts with a full barrier. Destinations: an image is marked
-// GPU-written at record time; a CPU-visible buffer range is reported to vk_guest_written once the GPU is done (write
+// GPU-written at record time; a CPU-visible buffer range is reported to vk_gpu_written once the GPU is done (write
 // watch does not see GPU writes, textures stored there re-upload).
 //
 // Events and counters are CPU-visible side effects. Their values go into guest memory on the completion thread through
@@ -48,7 +48,7 @@
 enum { W_FORMAT, W_REGION, W_BUFFER, W_OVERLAP, W_COPY, W_CLEAR, W_QUERY, W_COUNT };
 
 static void warn_once(int key, const char *fmt, ...) {
-    static volatile long seen[W_COUNT];
+    static volatile int32_t seen[W_COUNT];
     if (__atomic_exchange_n(&seen[key], 1, __ATOMIC_RELAXED)) return;
     char msg[256];
     va_list ap;
@@ -66,7 +66,7 @@ typedef struct { uint64_t addr, size; } Range;
 
 static void guest_written_cb(void *arg) {
     Range *r = arg;
-    vk_guest_written(r->addr, r->size);
+    vk_gpu_written(r->addr, r->size);
     free(r);
 }
 
@@ -77,6 +77,7 @@ static void note_gpu_write(VkExec *ex, uint64_t addr, uint64_t size) {
     Range *r = malloc(sizeof *r);
     if (!r) rt_fatal("vk: out of memory");
     *r = (Range){addr, size};
+    vk_mem_gpu_pending(addr, size);
     vk_completion_add(ex->fence, guest_written_cb, r);
 }
 
@@ -211,7 +212,10 @@ static void oq_cb(void *arg) {
         // completion thread, and with it every later callback, for good. It counts as visible (one sample).
         VkResult r = vkGetQueryPoolResults(dev, oq_pool, s->q[i], j - i, sizeof v, v, 2 * sizeof v[0],
                                            VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
-        if (r != VK_SUCCESS && r != VK_NOT_READY) rt_fatal("vk: occlusion query results failed (%d)", (int)r);
+        if (r != VK_SUCCESS && r != VK_NOT_READY) {
+            vk_device_fault_report(r);
+            rt_fatal("vk: occlusion query results failed (%d)", (int)r);
+        }
         vkResetQueryPool(dev, oq_pool, s->q[i], j - i);
         for (uint32_t k = i; k < j; k++) {
             if (v[2 * (k - i) + 1]) sum += v[2 * (k - i)];
@@ -352,10 +356,11 @@ static int sub_resolve(const tex_t *t, const view_t *v, int has_v, const NVNcopy
     s->level = has_v && v->set_levels ? v->base_level : 0;
     s->layer0 = has_v && v->set_layers ? v->min_layer : 0;
     uint32_t lw = max1(img->width >> s->level), lh = max1(img->height >> s->level);
-    s->x = r->xoffset, s->y = r->yoffset, s->z = r->zoffset;
+    int k = img->scale > 1 ? img->scale : 1;   // a larger shadow map: the game's region in its texels
+    s->x = r->xoffset * k, s->y = r->yoffset * k, s->z = r->zoffset;
     s->nz = r->depth > 0 ? (uint32_t)r->depth : 1;
-    s->w = r->width > 0 ? (uint32_t)r->width : defaults_to_level ? (s->x < (int32_t)lw ? lw - (uint32_t)s->x : 0) : 0;
-    s->h = r->height > 0 ? (uint32_t)r->height : defaults_to_level ? (s->y < (int32_t)lh ? lh - (uint32_t)s->y : 0) : 0;
+    s->w = r->width > 0 ? (uint32_t)r->width * k : defaults_to_level ? (s->x < (int32_t)lw ? lw - (uint32_t)s->x : 0) : 0;
+    s->h = r->height > 0 ? (uint32_t)r->height * k : defaults_to_level ? (s->y < (int32_t)lh ? lh - (uint32_t)s->y : 0) : 0;
     int is3d = img->type == VK_IMAGE_TYPE_3D;
     uint32_t layers = is3d ? 1 : (uint32_t)s->z + s->nz, first = is3d ? 0 : s->layer0;
     if (s->level >= img->levels || s->x < 0 || s->y < 0 || s->z < 0 || !s->w || !s->h ||
@@ -411,6 +416,10 @@ static int buffer_side(const VkExec *ex, const Sub *s, uint64_t addr, uint64_t *
 static void copy_buffer_image(VkExec *ex, const p_copy_b2t *p, int to_image) {
     Sub s;
     if (!sub_resolve(p->tex, &p->view, p->has_view, &p->r, 1, &s)) return;
+    if (s.img->scale > 1) {   // the buffer holds the game's texel count, the image more
+        warn_once(W_REGION, "buffer copy of a shadow map enlarged by TOTK_SHADOW_SCALE: skipped");
+        return;
+    }
     uint64_t size;
     VkBufferImageCopy c;
     VkMemSpan m;
@@ -587,6 +596,7 @@ static void clear_tex(VkExec *ex, const p_clear_tex *p) {
 }
 
 void vk_exec_op_xfer(VkExec *ex, uint32_t op, const void *payload) {
+    if (op != OP_RENDER_ENABLE && op != OP_SIGNAL_EVENT) vk_contact_flush(ex);
     switch (op) {
     case OP_COPY_B2B: copy_b2b(ex, payload); break;
     case OP_COPY_B2T: copy_buffer_image(ex, payload, 1); break;

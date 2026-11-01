@@ -64,7 +64,7 @@ def linux_link_libs():
 
 def linux_rt_skip():
     """Runtime sources replaced or omitted on Linux."""
-    return {'prof_win.c', 'rdoc_win.c', 'swkbd_win.c', 'gfx_window.c'}
+    return {'prof_win.c', 'rdoc_win.c', 'swkbd_win.c', 'gfx_window.c', 'prof_stub.c', 'rdoc_stub.c'}
 
 
 def linux_rt_extra():

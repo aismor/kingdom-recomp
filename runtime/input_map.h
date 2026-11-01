@@ -34,11 +34,14 @@ enum {
 };
 
 // Gamepad inputs by position (Nintendo layout, as SDL names them), platform-neutral like the key ids. ZL and ZR are the
-// analog triggers; input_win.c translates SDL buttons and axes to these (one place).
+// analog triggers; input_win.c translates SDL buttons and axes to these (one place). The paddles are the back buttons
+// of an Xbox Elite, DualSense Edge or Steam Controller (SDL's LEFT_PADDLE1 and so on); no Switch button has them by
+// default, a bind line or the remapping rows add them.
 enum {
     PAD_NONE = 0,
     PAD_SOUTH, PAD_EAST, PAD_WEST, PAD_NORTH, PAD_LSTICK, PAD_RSTICK, PAD_L, PAD_R, PAD_START, PAD_BACK,
     PAD_DPAD_LEFT, PAD_DPAD_UP, PAD_DPAD_RIGHT, PAD_DPAD_DOWN, PAD_ZL, PAD_ZR,
+    PAD_LPADDLE1, PAD_RPADDLE1, PAD_LPADDLE2, PAD_RPADDLE2,
     PAD_COUNT
 };
 
@@ -77,9 +80,23 @@ int input_map_bind(const char *button, const char *list);
 // Applies the TOTK_BIND_<action> settings (cfg_get) over the defaults: at start, and again when one of them changes.
 void input_map_configure(void);
 
-// The layout for a TOTK_PAD_LAYOUT value: "nintendo" or "xbox" (any case); anything else ("auto", NULL) picks Nintendo
-// when the pad's east button is labelled A (a Switch Pro Controller, a GuliKit) and Xbox otherwise.
+// The layout for a TOTK_PAD_LAYOUT value: "nintendo" or "xbox" (any case); "xbox_prompts", 0.1.9's name for the Nintendo
+// layout with the Xbox prompts, maps the buttons as "nintendo". Anything else ("auto", NULL) picks Nintendo when the
+// pad's east button is labelled A (a Switch Pro Controller, a GuliKit) and Xbox otherwise.
 int input_pad_layout_pick(const char *setting, int east_labelled_a);
+
+// Button prompts (TOTK_PROMPTS): the controller whose buttons the game's prompts show. Nintendo: the game's own. Xbox:
+// LB RB LT RT, Menu, View and a d-pad cross for the other buttons, and the face buttons named by the label of the
+// button the pad layout presses (runtime/romfs.c overlay_init, tools/make_romfs_patches.py --prompts).
+enum { PROMPTS_NINTENDO, PROMPTS_XBOX };
+// The prompts for a TOTK_PROMPTS value ("nintendo" or "xbox", any case). Unset or empty: Xbox while the pad layout
+// setting is "xbox_prompts", else Nintendo.
+int input_prompts_pick(const char *prompts, const char *pad_layout);
+// The folder next to romfs-index.bin that holds those prompts for a TOTK_PAD_LAYOUT value, NULL for the game's own. The
+// Nintendo layout plays an Xbox pad by position, so its folder names the face buttons the other way round
+// (romfs-patches-xbox: the right button does A and is labelled B); xbox and auto put every Switch button on the button
+// labelled with its letter (auto picks the layout per pad by its labels), so they share romfs-patches-xbox-label.
+const char *input_prompts_folder(int prompts, const char *pad_layout);
 // down[pad] != 0 for the gamepad inputs held. Returns the Switch button bits (0..15) the layout's pad table presses.
 uint64_t input_map_pad_buttons(const uint8_t down[PAD_COUNT], int layout);
 
@@ -91,6 +108,16 @@ void input_map_stick(const uint8_t down[KEY_COUNT], int stick, int32_t out[2]);
 // Mouse motion in raw counts over dt_s seconds to right-stick deflection: full deflection at 3000 / sens counts/s.
 // Clamped to the unit circle, up (negative dy) is +y.
 void input_mouse_stick(int32_t dx, int32_t dy, double dt_s, float sens, int32_t out[2]);
+// A gamepad stick (x, y in -32768..32767, up is +y) through a round dead zone of `dead` (fraction of full deflection,
+// 0..0.5): inside the circle the stick reads 0, and the rest of the travel is scaled to start at 0 at the edge, so a
+// drifting stick rests at 0 and full deflection still reaches full. The result stays inside the unit square.
+void input_pad_stick(int32_t x, int32_t y, float dead, int32_t out[2]);
+// The dead zone of gamepad stick 0 (left) or 1 (right) for input_pad_stick, as a fraction of full deflection:
+// TOTK_LSTICK_DEADZONE or TOTK_RSTICK_DEADZONE when set, else TOTK_STICK_DEADZONE (both sticks), percent clamped to 0..50.
+float input_pad_deadzone(int stick);
+// How far a stick (x, y in -32768..32767) is from the centre, in percent of full deflection (100 at an axis's end; a
+// square gate's corner reads more).
+double input_stick_percent(int32_t x, int32_t y);
 
 // ---- the remapping rows' edits, on a copy of input_map. Pure.
 // action's keys (table order) / its gamepad buttons in layout, at most max; returns how many.

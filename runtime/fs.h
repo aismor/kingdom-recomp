@@ -38,12 +38,18 @@ uint64_t romfs_file_count(void);                           // files in the index
 const char *romfs_entry(uint64_t i, uint64_t *offset, uint64_t *size);   // path, image offset and size of index row i
 const char *romfs_image_path(void);                        // the romfs.bin path fs_init opened
 size_t romfs_overlay_count(void);
+// The button prompts (input_prompts_folder): the folder loaded at start, NULL for the game's own prompts; whether a
+// folder had a manifest at start; and why the folder the settings asked for at start was not loaded (ROMFS_PROMPTS_OK
+// for any other folder: it was not asked for).
+enum { ROMFS_PROMPTS_OK, ROMFS_PROMPTS_MISSING, ROMFS_PROMPTS_FAILED, ROMFS_PROMPTS_SHAPE, ROMFS_PROMPTS_MODS,
+       ROMFS_PROMPTS_PATCHES };
+const char *romfs_prompts(void);
+int romfs_prompts_ready(const char *folder);
+int romfs_prompts_off(const char *folder);
 const char *romfs_overlay(size_t k, const char **file, uint64_t *size, int *is_added);   // RomFS path of overlay k
 void fs_trace(const char *what, const char *path);         // TOTK_TRACE=fs: one line per open
 
 // ---- fs_host.c
-wchar_t *fs_wide(const char *utf8);                        // UTF-16 copy for the W APIs; free() it. Fatal on
-                                                           // invalid UTF-8
 void fs_host_set_profile(const char *dir);                 // profile directory; before the first storage mount only
                                                            // (default rt_config()->profile)
 int fs_save_busy(void);                                    // a save is being written: a save file open for writing,

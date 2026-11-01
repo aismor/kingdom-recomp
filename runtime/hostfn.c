@@ -21,14 +21,14 @@ __attribute__((section(".ovr$z"), used)) static const RtHostEntry ovr_stop[1];
 __attribute__((section(".obs$a"), used)) static const RtHostEntry obs_start[1];
 __attribute__((section(".obs$z"), used)) static const RtHostEntry obs_stop[1];
 #else
-// ELF: the linker defines __start_<section> and __stop_<section> around rt_ovr and rt_obs (host.h); weak, so a build
-// without entries of one kind links with an empty table.
-extern const RtHostEntry __start_rt_ovr[] __attribute__((weak)), __stop_rt_ovr[] __attribute__((weak));
-extern const RtHostEntry __start_rt_obs[] __attribute__((weak)), __stop_rt_obs[] __attribute__((weak));
-#define ovr_start __start_rt_ovr
-#define ovr_stop __stop_rt_ovr
-#define obs_start __start_rt_obs
-#define obs_stop __stop_rt_obs
+// ELF: the linker defines __start_<section> and __stop_<section> around a section named like a C identifier. Weak: a
+// build without observers has no such section, and both bounds are then NULL.
+extern const RtHostEntry __start_totk_ovr[] __attribute__((weak)), __stop_totk_ovr[] __attribute__((weak));
+extern const RtHostEntry __start_totk_obs[] __attribute__((weak)), __stop_totk_obs[] __attribute__((weak));
+#define ovr_start __start_totk_ovr
+#define ovr_stop __stop_totk_ovr
+#define obs_start __start_totk_obs
+#define obs_stop __stop_totk_obs
 #endif
 
 typedef struct {
@@ -121,7 +121,7 @@ __attribute__((noinline, noreturn, cold)) static void bad_entry(Cpu *c) {
 }
 
 // kern_host_track: the call counted in the thread's host depth. Not a tail call, so the host stack holds this frame
-// while fn runs; longjmp out of fn (ExitThread) leaves the depth raised on a thread that ends.
+// while fn runs; the jump out of fn (ExitThread) leaves the depth raised on a thread that ends.
 __attribute__((noinline)) static void hostfn_tracked(Cpu *c, GuestFn fn) {
     void *t = c->thread;
     int *d = kern_host_depth(t);
