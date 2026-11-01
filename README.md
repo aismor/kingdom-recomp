@@ -20,7 +20,7 @@ Report problems as issues, following [CONTRIBUTING.md](CONTRIBUTING.md).
 - **Brazilian Portuguese (0.2.3+):** installer and in-game menu in Portuguese; official in-game text and subtitles with **update 1.4.3** and `lang = pt-BR` ([docs/linux.pt.md](docs/linux.pt.md))
 - 60 fps by default; up to 144 fps or the monitor's refresh rate (experimental)
 - Custom resolutions (1080p, 2k...), supersampling and AMD FSR 1 upscaling
-- In-game settings menu (F1) and performance overlay (F10)
+- In-game settings menu (F1), separate **Mods** (RomFS and voice-over mods) and **Cheats** tabs, and performance overlay (F10). Cheats are selected for game update 1.2.1 or 1.4.3 automatically.
 - Keyboard, mouse and gamepad with remapping, rumble and gyro
 - Shaders prepared at install instead of during play
 

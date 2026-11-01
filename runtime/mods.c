@@ -1,6 +1,5 @@
-// User mod folders, enabled.txt, and built-in patch mods; RomFS staging is in romfs.c.
+// User RomFS mod folders and enabled.txt; staging is in romfs.c and built-in cheats are in cheats.c.
 #include "mods.h"
-#include "host.h"
 #include "os.h"
 #include "platform/platform.h"
 #include <stdio.h>
@@ -11,25 +10,6 @@
 #endif
 
 static char g_root[1024];
-
-static const struct {
-    const char *name;
-    const char *patch_set;
-    UiTextId label, desc;
-} k_builtins[] = {
-    {"Recomp-Infinite-Stamina", "infstamina", UI_MENU_MOD_STAMINA, UI_MENU_MOD_STAMINA_DESC},
-    {"Recomp-Infinite-Horse-Stamina", "infhorse", UI_MENU_MOD_HORSE_STAMINA, UI_MENU_MOD_HORSE_STAMINA_DESC},
-    {"Recomp-Infinite-Health", "infhealth", UI_MENU_MOD_HEALTH, UI_MENU_MOD_HEALTH_DESC},
-    {"Recomp-Super-Jump", "superjump", UI_MENU_MOD_SUPER_JUMP, UI_MENU_MOD_SUPER_JUMP_DESC},
-    {"Recomp-Free-Shop", "freeshop", UI_MENU_MOD_FREE_SHOP, UI_MENU_MOD_FREE_SHOP_DESC},
-    {"Recomp-Infinite-Arrows", "infarrows", UI_MENU_MOD_ARROWS, UI_MENU_MOD_ARROWS_DESC},
-    {"Recomp-Infinite-Durability", "infdur", UI_MENU_MOD_DURABILITY, UI_MENU_MOD_DURABILITY_DESC},
-    {"Recomp-Infinite-Zonai", "infzonai", UI_MENU_MOD_ZONAI, UI_MENU_MOD_ZONAI_DESC},
-    {"Recomp-Infinite-Food", "infood", UI_MENU_MOD_FOOD, UI_MENU_MOD_FOOD_DESC},
-    {"Recomp-Pickup-8x", "pick8", UI_MENU_MOD_PICKUP_8X, UI_MENU_MOD_PICKUP_8X_DESC},
-    {"Recomp-Infinite-Food-Buff", "infoodbuff", UI_MENU_MOD_FOOD_BUFF, UI_MENU_MOD_FOOD_BUFF_DESC},
-    {"Recomp-Infinite-Battery", "infbat", UI_MENU_MOD_BATTERY, UI_MENU_MOD_BATTERY_DESC},
-};
 
 static int root_ready(void) {
     if (g_root[0]) return 1;
@@ -43,7 +23,11 @@ static int root_ready(void) {
     os_host_path(exe, g_root, sizeof g_root);
     size_t n = strlen(g_root);
     if (n + 6 >= sizeof g_root) return 0;
+#ifdef _WIN32
+    snprintf(g_root + n, sizeof g_root - n, "\\mods");
+#else
     snprintf(g_root + n, sizeof g_root - n, "/mods");
+#endif
     plat_file_mkdir_p(g_root);
     return 1;
 }
@@ -118,9 +102,6 @@ static int list_cb(const char *name, void *ctx) {
     ModEntry *e = &sc->out[*sc->n];
     snprintf(e->name, sizeof e->name, "%s", name);
     e->enabled = 0;
-    e->kind = MOD_KIND_ROMFS;
-    e->patch_set = -1;
-    e->label = (UiTextId)0;
     e->desc = UI_MENU_MODS_ROW_DESC;
     (*sc->n)++;
     return 1;
@@ -139,20 +120,10 @@ static void sort_entries(ModEntry *out, int n) {
 int mods_scan(ModEntry *out, int max) {
     if (max <= 0) return 0;
     int n = 0;
-    for (size_t b = 0; b < sizeof k_builtins / sizeof *k_builtins && n < max; b++) {
-        ModEntry *e = &out[n++];
-        snprintf(e->name, sizeof e->name, "%s", k_builtins[b].name);
-        e->enabled = 0;
-        e->kind = MOD_KIND_BUILTIN;
-        e->patch_set = rt_patch_set(k_builtins[b].patch_set);
-        e->label = k_builtins[b].label;
-        e->desc = k_builtins[b].desc;
-    }
     if (!root_ready()) return n;
-    int n_builtin = n;
     ScanCtx sc = {out, &n, max};
     plat_file_list(g_root, "", list_cb, &sc);
-    sort_entries(out + n_builtin, n - n_builtin);
+    sort_entries(out, n);
     char enpath[1100];
     snprintf(enpath, sizeof enpath, "%s/enabled.txt", g_root);
     read_enabled(enpath, out, n);
@@ -161,9 +132,6 @@ int mods_scan(ModEntry *out, int max) {
 
 void mods_apply(const ModEntry *entries, int n) {
     if (!root_ready()) return;
-    for (int i = 0; i < n; i++)
-        if (entries[i].kind == MOD_KIND_BUILTIN && entries[i].patch_set >= 0)
-            rt_patch_switch(entries[i].patch_set, entries[i].enabled);
     char enpath[1100];
     snprintf(enpath, sizeof enpath, "%s/enabled.txt", g_root);
     char body[8192];
@@ -174,12 +142,4 @@ void mods_apply(const ModEntry *entries, int n) {
             pos += (size_t)snprintf(body + pos, sizeof body - pos, "%s\n", entries[i].name);
     plat_file_write_atomic(enpath, body, pos);
     romfs_stage_user_mods();
-}
-
-void mods_init(void) {
-    ModEntry entries[MODS_MAX];
-    int n = mods_scan(entries, MODS_MAX);
-    for (int i = 0; i < n; i++)
-        if (entries[i].kind == MOD_KIND_BUILTIN && entries[i].patch_set >= 0)
-            rt_patch_switch(entries[i].patch_set, entries[i].enabled);
 }

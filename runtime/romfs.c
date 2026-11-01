@@ -518,8 +518,11 @@ static void walk_romfs_tree(const char *romfs_root, const char *rel, int depth, 
         if (lstat(child, &st)) continue;
         if (S_ISDIR(st.st_mode) && !S_ISLNK(st.st_mode))
             walk_romfs_tree(romfs_root, rel_path, depth + 1, list, n, cap);
-        else if (S_ISREG(st.st_mode))
+        else if (S_ISREG(st.st_mode)) {
+            // Eden/Yuzu pack manifest; not a RomFS path. Staging it as manifest.tsv would overwrite mods/.active/manifest.tsv.
+            if (!strcmp(de->d_name, "manifest.tsv")) continue;
             staged_put(list, n, cap, rel_path, abs_path);
+        }
     }
     closedir(d);
 #else
@@ -544,6 +547,8 @@ static void walk_romfs_tree(const char *romfs_root, const char *rel, int depth, 
         snprintf(abs_path, sizeof abs_path, "%s/%s", romfs_root, rel_path);
         if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
             walk_romfs_tree(romfs_root, rel_path, depth + 1, list, n, cap);
+        else if (!strcmp(name, "manifest.tsv"))
+            continue;
         else
             staged_put(list, n, cap, rel_path, abs_path);
     } while (FindNextFileW(h, &fd));
@@ -609,9 +614,9 @@ static void read_enabled_mods(char names[64][96], int *count) {
 
 static int mod_romfs_dir(const char *mods, const char *name, char *romfs, size_t cap) {
     if (snprintf(romfs, cap, "%s/%s/romfs", mods, name) >= (int)cap) return 0;
+#ifndef _WIN32
     char host[1200];
     os_host_path(romfs, host, sizeof host);
-#ifndef _WIN32
     struct stat st;
     if (stat(host, &st) || !S_ISDIR(st.st_mode)) return 0;
     return 1;

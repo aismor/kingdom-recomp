@@ -4,6 +4,7 @@
 
 #ifdef _WIN32
 
+#include <string.h>
 #include <windows.h>
 #include <bcrypt.h>
 #include <psapi.h>
@@ -11,6 +12,15 @@
 #include <tlhelp32.h>
 #include <pdh.h>
 #include <shellapi.h>
+
+// Native Windows paths already use backslashes; Linux implements this in os_linux.c (slash normalization).
+static inline void os_host_path(const char *in, char *out, size_t cap) {
+    if (!in || !out || cap == 0) return;
+    size_t n = strlen(in);
+    if (n >= cap) n = cap - 1;
+    memcpy(out, in, n);
+    out[n] = 0;
+}
 
 #else
 
