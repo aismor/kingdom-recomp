@@ -11,6 +11,53 @@ set bounce   TOTK_HIGHFPS_FIX    1
 set output   TOTK_PATCH_OUTPUT   0
 set scene    TOTK_PATCH_SCENE    0
 
+# Built-in gameplay cheats for BID 277178B7DBA1B6D4. Sites and original/replacement instructions were independently
+# checked against Arch9SK7/MyNXCheats' 1.4.3 restore and cheat records. Code-cave cheats are expressed inline because
+# the static recompiler can lift a replacement sequence directly at the original site.
+set infstamina TOTK_INF_STAMINA 0
+site infstamina main 31d398 1f080800 1e204040
+
+set infhorse TOTK_INF_HORSE_STAMINA 0
+# Keep w8 unchanged and set flags from it; unlike the Atmosphere NOP this gives both lifted alternatives the same flag
+# effect, while the following b.lt still sees a non-negative remaining spur as available.
+site infhorse main 233765c 71000508 7100011f
+
+set infhealth TOTK_INF_HEALTH 0
+# Refill current health at +8 from maximum health at +0x18, then retain the original vtable load.
+site infhealth main 4407d0 f9400008 b9401808 b9000808 f9400008
+
+set superjump TOTK_SUPER_JUMP 0
+site superjump main bd3788 1e211c41 1e209001
+
+set freeshop TOTK_FREE_SHOP 0
+site freeshop main 250767c 5a980715 1a9813f5
+
+set infarrows TOTK_INF_ARROWS 0
+site infarrows main 1b78cd0 12800001 2a1f03e1
+
+set infdur TOTK_INF_DURABILITY 0
+site infdur main 21eca9c 1b09a148 1b09a3e8
+# Copy maximum durability (+0x18) into current durability (+8) at both update paths.
+site infdur main 282e58 b9400901 b9401901 b9000901
+site infdur main 2829f4 b9400901 b9401901 b9000901
+
+set infzonai TOTK_INF_ZONAI 0
+site infzonai main 20b2a1c 12800001 2a1f03e1
+
+set infood TOTK_INF_FOOD 0
+site infood main 20b3abc 12800001 2a1f03e1
+
+set items999 TOTK_ITEMS_999 0
+site items999 main a77b40 0b0300c3 52807ce3
+
+set infoodbuff TOTK_INF_FOOD_BUFF 0
+# Load the initial duration and store it over the remaining duration instead of calling an external code cave.
+site infoodbuff main 3067f4 bd415e80 bd416280 bd015e80
+
+set infbat TOTK_INF_BATTERY 0
+site infbat main 78251c bd004668 bd004662
+site infbat main 782568 bd004668 bd004662
+
 # 60 fps: the adaptive present-interval controller (main+0x2db174, 1.2.1 0x8f26c8) gets the minimum interval 1.
 site fps60 main 2db204 6b08015f 7100055f   # clamp: cmp w10, #1 (was cmp w10, w8 = minimum)
 site fps60 main 2db208 1a89b10a 1a9fa52a   # clamp: csinc w10, w9, wzr, ge (desired = max(desired, 1))
