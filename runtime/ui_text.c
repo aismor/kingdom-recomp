@@ -321,7 +321,7 @@ static const char *const text_en[UI_TEXT_COUNT] = {
     [UI_MENU_AMIIBO_REMOVED] = "Amiibo lifted",
     [UI_MENU_AMIIBO_STATUS] = "Status: %s",
     [UI_MENU_MENU_LANG] = "Menu language", [UI_MENU_MENU_LANG_DESC] = "Language of this menu and the overlay.",
-    [UI_MENU_MENU_LANG_AUTO] = "Automatic (from Windows)",
+    [UI_MENU_MENU_LANG_AUTO] = "Automatic (system or game language)",
 
     [UI_MENU_ADV_WARNING] = "These settings are for testing and troubleshooting. Change them only when you know why.",
     [UI_MENU_GROUP_SCHED] = "Scheduling", [UI_MENU_GROUP_SHADERS] = "Shaders and pipelines",
@@ -721,7 +721,7 @@ static const char *const text_ru[UI_TEXT_COUNT] = {
     [UI_MENU_AMIIBO_REMOVED] = "Amiibo убран",
     [UI_MENU_AMIIBO_STATUS] = "Состояние: %s",
     [UI_MENU_MENU_LANG] = "Язык меню", [UI_MENU_MENU_LANG_DESC] = "Язык этого меню и индикатора.",
-    [UI_MENU_MENU_LANG_AUTO] = "Автоматически (из Windows)",
+    [UI_MENU_MENU_LANG_AUTO] = "Автоматически (система или язык игры)",
 
     [UI_MENU_ADV_WARNING] = "Эти настройки нужны для тестов и поиска неполадок. Меняйте их, только если знаете зачем.",
     [UI_MENU_GROUP_SCHED] = "Планирование", [UI_MENU_GROUP_SHADERS] = "Шейдеры и конвейеры",
@@ -1039,7 +1039,7 @@ static const char *const text_pt_br[UI_TEXT_COUNT] = {
     [UI_MENU_AMIIBO_REMOVED] = "Amiibo afastado",
     [UI_MENU_AMIIBO_STATUS] = "Estado: %s",
     [UI_MENU_MENU_LANG] = "Idioma do menu", [UI_MENU_MENU_LANG_DESC] = "Idioma deste menu e do indicador.",
-    [UI_MENU_MENU_LANG_AUTO] = "Automático (do Windows)",
+    [UI_MENU_MENU_LANG_AUTO] = "Automático (sistema ou idioma do jogo)",
 
     [UI_MENU_ADV_WARNING] = "Estas configurações são para testes e solução de problemas. Altere-as só quando souber "
                             "por quê.",
@@ -1571,7 +1571,7 @@ static const char *const text_zh_hans[UI_TEXT_COUNT] = {
     [UI_MENU_AMIIBO_STATUS] = "状态：%s",
     [UI_MENU_MENU_LANG] = "菜单语言",
     [UI_MENU_MENU_LANG_DESC] = "本菜单和性能浮层的语言。",
-    [UI_MENU_MENU_LANG_AUTO] = "自动（跟随 Windows）",
+    [UI_MENU_MENU_LANG_AUTO] = "自动（系统或游戏语言）",
     [UI_MENU_ADV_WARNING] = "这些设置用于测试和排查问题，请在了解原因后再修改。",
     [UI_MENU_GROUP_SCHED] = "调度",
     [UI_MENU_GROUP_SHADERS] = "着色器和管线",
@@ -1840,21 +1840,30 @@ void ui_text_visit(const char *lang, void (*visit)(void *ctx, const char *text),
 }
 
 // The menu language, re-read when cfg_version changes. TOTK_MENU_LANG names a catalog language ("en", "ru", "pt-BR",
-// "zh-Hans"); unset, it follows the system UI language, through the same code map the game language uses ("zh-CN" ->
-// "zh-Hans"). Windows names a region with it ("ru-RU"), so a tag without menu text tries its language alone ("ru"). A
-// language whose row has no menu text (only the software keyboard does) shows English, so other Windows locales keep the
-// English menu.
-static const char *resolve_menu_lang(void) {
-    const char *v = cfg_value("TOTK_MENU_LANG");
-    const char *sys = plat_ui_language();
-    const char *lang = v && *v ? ui_text_lang(v) : sys && *sys ? ui_text_lang(sys) : "en";
+// "zh-Hans"); unset, it follows the system UI language, then the game's language (TOTK_LANG / locale), through the
+// same code map the game language uses ("zh-CN" -> "zh-Hans"). Windows names a region with it ("ru-RU"), so a tag
+// without menu text tries its language alone ("ru"). A language whose row has no menu text (only the software keyboard
+// does) shows English, so other Windows locales keep the English menu.
+static const char *menu_lang_from_tag(const char *tag) {
+    if (!tag || !*tag) return NULL;
+    const char *lang = ui_text_lang(tag);
     if (ui_text_defined(lang, UI_MENU_TITLE)) return lang;
-    static char base[16];   // menu_text calls this on one thread at a time, on a cfg_version change
+    static char base[16];
     size_t n = strcspn(lang, "-");
     if (n < sizeof base && lang[n]) {
         memcpy(base, lang, n), base[n] = 0;
         if (ui_text_defined(base, UI_MENU_TITLE)) return find_row(base)->lang;
     }
+    return NULL;
+}
+
+static const char *resolve_menu_lang(void) {
+    const char *lang = menu_lang_from_tag(cfg_value("TOTK_MENU_LANG"));
+    if (lang) return lang;
+    lang = menu_lang_from_tag(plat_ui_language());
+    if (lang) return lang;
+    lang = menu_lang_from_tag(ov_language());
+    if (lang) return lang;
     return "en";
 }
 

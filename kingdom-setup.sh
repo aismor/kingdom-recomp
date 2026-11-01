@@ -100,12 +100,15 @@ out.parent.mkdir(parents=True, exist_ok=True)
 out.write_text(sl.history(Path('refs/MacNativeGames'), 'HEAD'), encoding='utf-8')
 "
 fi
-if [[ ! -f "$ROOT/build/install-rtlib/libtotkrt.a" ]]; then
-    say "building the runtime library (one-time, a few minutes)..."
+rtlib_needs_rebuild() {
+    local lib=$1
+    [[ ! -f "$lib" ]] && return 0
+    find "$ROOT/runtime" -type f \( -name '*.c' -o -name '*.cpp' -o -name '*.h' \) -newer "$lib" -print -quit | grep -q .
+}
+if rtlib_needs_rebuild "$ROOT/build/install-rtlib/libtotkrt.a"; then
+    say "building the runtime library (runtime sources changed)..."
     box -- python3 tools/build_game.py --make-runtime-lib --out build/install-rtlib --toolchain /usr --cpu v3 --jobs "$(nproc)"
-    if [[ ! -f "$ROOT/build/install-rtlib/libtotkrt-v2.a" ]]; then
-        box -- bash -lc 'python3 tools/build_game.py --make-runtime-lib --out build/install-rtlib-v2-tmp --toolchain /usr --cpu v2 --jobs "$(nproc)" && mv build/install-rtlib-v2-tmp/libtotkrt.a build/install-rtlib/libtotkrt-v2.a && rm -rf build/install-rtlib-v2-tmp'
-    fi
+    box -- bash -lc 'python3 tools/build_game.py --make-runtime-lib --out build/install-rtlib-v2-tmp --toolchain /usr --cpu v2 --jobs "$(nproc)" && mv build/install-rtlib-v2-tmp/libtotkrt.a build/install-rtlib/libtotkrt-v2.a && rm -rf build/install-rtlib-v2-tmp'
 fi
 
 # ---- the window
