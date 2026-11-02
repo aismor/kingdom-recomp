@@ -64,6 +64,21 @@ static const char *const text_en[UI_TEXT_COUNT] = {
     [UI_MENU_UPSCALER_FSR] = "AMD FSR 1", [UI_MENU_UPSCALER_BILINEAR] = "Bilinear",
     [UI_MENU_SHARPNESS] = "FSR sharpness",
     [UI_MENU_SHARPNESS_DESC] = "Sharpening after FSR scaling; 0 turns it off.",
+    [UI_MENU_COLOR] = "Colour",
+    [UI_MENU_COLOR_PRESET] = "Colour profile",
+    [UI_MENU_COLOR_PRESET_DESC] = "Sets the four values below. Vivid: more contrast and saturation, shadows opened a "
+                                  "little (made for OLED screens). Clarity: a little more contrast, saturation and "
+                                  "brightness. Moving a value makes the profile Custom. The HUD changes with the picture; "
+                                  "this menu does not.",
+    [UI_MENU_COLOR_DEFAULT] = "Game's own", [UI_MENU_COLOR_VIVID] = "Vivid (OLED)", [UI_MENU_COLOR_CLARITY] = "Clarity",
+    [UI_MENU_COLOR_CUSTOM] = "Custom",
+    [UI_MENU_COLOR_BRIGHTNESS] = "Brightness", [UI_MENU_COLOR_BRIGHTNESS_DESC] = "Added to every colour; 0 leaves it.",
+    [UI_MENU_COLOR_CONTRAST] = "Contrast",
+    [UI_MENU_COLOR_CONTRAST_DESC] = "Spreads colours away from mid-grey (above 100 %) or towards it; 100 % leaves them.",
+    [UI_MENU_COLOR_SATURATION] = "Saturation",
+    [UI_MENU_COLOR_SATURATION_DESC] = "Colour strength against grey; 100 % leaves it.",
+    [UI_MENU_COLOR_GAMMA] = "Gamma",
+    [UI_MENU_COLOR_GAMMA_DESC] = "Below 1 brightens dark and middle tones, above 1 darkens them; 1 leaves them.",
 
     [UI_MENU_FPS_LIMIT] = "Frame rate limit",
     [UI_MENU_FPS_LIMIT_DESC] = "The most frames per second the game draws. Above 60 is experimental and needs Game speed "
@@ -317,6 +332,22 @@ static const char *const text_ru[UI_TEXT_COUNT] = {
     [UI_MENU_UPSCALER_FSR] = "AMD FSR 1", [UI_MENU_UPSCALER_BILINEAR] = "Билинейное",
     [UI_MENU_SHARPNESS] = "Резкость FSR",
     [UI_MENU_SHARPNESS_DESC] = "Повышение резкости после масштабирования FSR; 0 выключает его.",
+    [UI_MENU_COLOR] = "Цвет",
+    [UI_MENU_COLOR_PRESET] = "Цветовой профиль",
+    [UI_MENU_COLOR_PRESET_DESC] = "Задаёт четыре значения ниже. «Яркий»: больше контраста и насыщенности, тени немного "
+                                  "светлее (для OLED-экранов). «Чёткость»: немного больше контраста, насыщенности и "
+                                  "яркости. Изменение любого значения делает профиль «Своим». Интерфейс игры меняется "
+                                  "вместе с картинкой, это меню — нет.",
+    [UI_MENU_COLOR_DEFAULT] = "Как в игре", [UI_MENU_COLOR_VIVID] = "Яркий (OLED)", [UI_MENU_COLOR_CLARITY] = "Чёткость",
+    [UI_MENU_COLOR_CUSTOM] = "Свой",
+    [UI_MENU_COLOR_BRIGHTNESS] = "Яркость", [UI_MENU_COLOR_BRIGHTNESS_DESC] = "Прибавляется к каждому цвету; 0 — без изменений.",
+    [UI_MENU_COLOR_CONTRAST] = "Контраст",
+    [UI_MENU_COLOR_CONTRAST_DESC] = "Отдаляет цвета от среднего серого (выше 100 %) или приближает к нему; 100 % — без "
+                                    "изменений.",
+    [UI_MENU_COLOR_SATURATION] = "Насыщенность",
+    [UI_MENU_COLOR_SATURATION_DESC] = "Сила цвета относительно серого; 100 % — без изменений.",
+    [UI_MENU_COLOR_GAMMA] = "Гамма",
+    [UI_MENU_COLOR_GAMMA_DESC] = "Ниже 1 осветляет тёмные и средние тона, выше 1 затемняет их; 1 — без изменений.",
 
     [UI_MENU_FPS_LIMIT] = "Ограничение частоты кадров",
     [UI_MENU_FPS_LIMIT_DESC] = "Наибольшее число кадров в секунду. Выше 60 — экспериментальный режим, нужна «Скорость "
@@ -574,6 +605,23 @@ static const char *const text_pt[UI_TEXT_COUNT] = {
     [UI_MENU_UPSCALER_FSR] = "AMD FSR 1", [UI_MENU_UPSCALER_BILINEAR] = "Bilinear",
     [UI_MENU_SHARPNESS] = "Nitidez FSR",
     [UI_MENU_SHARPNESS_DESC] = "Nitidez após a escala FSR; 0 desliga.",
+    [UI_MENU_COLOR] = "Cor",
+    [UI_MENU_COLOR_PRESET] = "Perfil de cor",
+    [UI_MENU_COLOR_PRESET_DESC] = "Define os quatro valores abaixo. Vívido: mais contraste e saturação, sombras um "
+                                  "pouco mais claras (feito para telas OLED). Clareza: um pouco mais de contraste, "
+                                  "saturação e brilho. Alterar um valor torna o perfil Personalizado. A interface do "
+                                  "jogo muda com a imagem; este menu não.",
+    [UI_MENU_COLOR_DEFAULT] = "Do jogo", [UI_MENU_COLOR_VIVID] = "Vívido (OLED)",
+    [UI_MENU_COLOR_CLARITY] = "Clareza", [UI_MENU_COLOR_CUSTOM] = "Personalizado",
+    [UI_MENU_COLOR_BRIGHTNESS] = "Brilho",
+    [UI_MENU_COLOR_BRIGHTNESS_DESC] = "Somado a todas as cores; 0 não muda nada.",
+    [UI_MENU_COLOR_CONTRAST] = "Contraste",
+    [UI_MENU_COLOR_CONTRAST_DESC] = "Afasta as cores do cinza médio (acima de 100 %) ou as aproxima dele; 100 % não "
+                                    "muda nada.",
+    [UI_MENU_COLOR_SATURATION] = "Saturação",
+    [UI_MENU_COLOR_SATURATION_DESC] = "Força da cor em relação ao cinza; 100 % não muda nada.",
+    [UI_MENU_COLOR_GAMMA] = "Gama",
+    [UI_MENU_COLOR_GAMMA_DESC] = "Abaixo de 1 clareia os tons escuros e médios, acima de 1 os escurece; 1 não muda nada.",
 
     [UI_MENU_FPS_LIMIT] = "Limite de taxa de quadros",
     [UI_MENU_FPS_LIMIT_DESC] = "O máximo de quadros por segundo que o jogo desenha. Acima de 60 é experimental e "
