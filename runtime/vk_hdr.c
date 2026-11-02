@@ -22,6 +22,7 @@
 #include "vk.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "cfg.h"
