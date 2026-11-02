@@ -71,3 +71,6 @@ desktop.ini
 
 # Agent task worktrees (tools/worktree.py)
 /.worktrees/
+
+# others
+docs/upstream-settings-migration.md
