@@ -26,6 +26,7 @@
 #include "nvn_api.h"
 #include "nvn_hmap.h"
 #include "vk.h"
+#include "vk_dlaa.h"
 #include "vk_exec.h"
 
 #define MAX_BINDINGS 128
@@ -1674,6 +1675,7 @@ static void record_fixed(VkExec *ex) {
         if (w < 1) w = 1;
         if (h < 1) h = 1;
         VkViewport v = {x, y + h, w, -h, ex->depth_range[0], ex->depth_range[1]};   // the y flip: negative height
+        vk_dlaa_viewport(ex, &v);
         vkCmdSetViewportWithCount(cb, 1, &v);
         ex->recorded++;
     }
@@ -1862,6 +1864,7 @@ static int prepare_draw(VkExec *ex, int prim, int32_t count, int restart) {
         if (fs_wait) fs = shader_for(ex, NVN_STAGE_FS, &has_fs, NULL, 1);
     }
     if (!vs || (has_fs && !fs)) return 0;
+    if (vk_dlaa_skip_draw(fs)) return 0;
     uint32_t fbl = feedback_prepare(ex, fs);
     VkPipeState s = ex->pipe;
     s.vs = vs, s.fs = fs;
@@ -1932,6 +1935,7 @@ static int prepare_draw(VkExec *ex, int prim, int32_t count, int restart) {
         ex->recorded++;
         B.st = s, B.st_valid = 1;
     }
+    vk_dlaa_draw(ex);
     record_fixed(ex);
     repeat_stats(ex, info);
     bind_resources(ex, info);

@@ -118,6 +118,10 @@
 # Picture shape when the window differs from the game resolution: fit keeps the shape with black bars; stretch fills
 # the window. Changes while the game runs take effect at once.
 # aspect = fit
+# NVIDIA DLAA at the native 3D resolution. Requires an NVIDIA RTX GPU and nvngx_dlss.dll next to totk.exe. Read at start.
+# dlaa = 0
+# The game's FXAA; it is usually unnecessary with DLAA. Changes while the game runs take effect at once.
+# fxaa = 1
 # Colour profile: default (the game's picture), vivid (more contrast and saturation for OLED), clarity (a small boost),
 # or custom. The four live values below are brightness added in percent, contrast and saturation in percent, and gamma.
 # color_preset = default

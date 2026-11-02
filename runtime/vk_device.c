@@ -10,6 +10,7 @@
 #include "cfg.h"
 #include "host.h"
 #include "vk.h"
+#include "vk_dlaa.h"
 
 static VkCtx g_vk;
 static int g_ready;
@@ -43,13 +44,13 @@ static int layer_present(const char *name) {
 
 static int create_instance(void) {
 #ifdef _WIN32
-    const char *ext[4] = {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WIN32_SURFACE_EXTENSION_NAME};
+    const char *ext[12] = {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WIN32_SURFACE_EXTENSION_NAME};
     uint32_t n_ext = 2;
 #else
     // Every window-system surface the loader offers, by name: the VK_USE_PLATFORM_* headers stay out, and SDL picks
     // Wayland or X11 at run time.
     static const char *const window_ext[] = {"VK_KHR_wayland_surface", "VK_KHR_xlib_surface", "VK_KHR_xcb_surface"};
-    const char *ext[8];
+    const char *ext[12];
     uint32_t n_ext = 0;
     ext[n_ext++] = VK_KHR_SURFACE_EXTENSION_NAME;
     uint32_t n_have = 0;
@@ -68,6 +69,7 @@ static int create_instance(void) {
         validate = 0;
     }
     if (validate) ext[n_ext++] = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
+    vk_dlaa_instance_exts(ext, &n_ext, 12);
     VkApplicationInfo app = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO, .pApplicationName = "Kingdom Recomp",
                              .pEngineName = "Kingdom Recomp", .apiVersion = VK_API_VERSION_1_3};
     VkInstanceCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, .pApplicationInfo = &app,
@@ -215,7 +217,7 @@ static int create_device(void) {
     vkEnumerateDeviceExtensionProperties(g_vk.phys, NULL, &ne, NULL);
     VkExtensionProperties *ep = calloc(ne ? ne : 1, sizeof *ep);
     vkEnumerateDeviceExtensionProperties(g_vk.phys, NULL, &ne, ep);
-    const char *ext[28];
+    const char *ext[40];
     uint32_t n_ext = 0;
     for (size_t i = 0; i < sizeof k_required_ext / sizeof *k_required_ext; i++) ext[n_ext++] = k_required_ext[i];
 
@@ -252,6 +254,7 @@ static int create_device(void) {
         CHAIN(fbl, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ATTACHMENT_FEEDBACK_LOOP_LAYOUT_FEATURES_EXT);
         CHAIN(lr, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_LOCAL_READ_FEATURES_KHR);
     }
+    vk_dlaa_device_exts(ep, ne, ext, &n_ext, 34);
     if (has_ext(ep, ne, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME)) { g_vk.has_memory_budget = 1; ext[n_ext++] = VK_EXT_MEMORY_BUDGET_EXTENSION_NAME; }
     // Graphics pipeline library: chained last so it can be dropped again when vk_caps_gpl declines it.
     void **gpl_link = NULL;
@@ -368,7 +371,7 @@ int vk_init(void) {
     AcquireSRWLockExclusive(&g_lock);
     if (!g_ready) {
         memset(&g_vk, 0, sizeof g_vk);
-        if (create_instance() && pick_device() && create_device()) g_ready = 1, vk_headroom_start();
+        if (create_instance() && pick_device() && create_device()) g_ready = 1, vk_headroom_start(), vk_dlaa_init();
         else destroy_all();
     }
     int ok = g_ready;

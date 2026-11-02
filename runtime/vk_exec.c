@@ -25,6 +25,7 @@
 #include "nvn_tex.h"
 #include "tex.h"
 #include "vk.h"
+#include "vk_dlaa.h"
 #include "vk_exec.h"
 
 #define WEAK __attribute__((weak))
@@ -418,6 +419,7 @@ void vk_exec_barrier(VkExec *ex) { barrier_to(ex, NULL, NULL, 0); }
 void vk_exec_pass_begin(VkExec *ex) {
     if (ex->in_pass) return;
     resolve_rt(ex);
+    vk_dlaa_pass(ex);
     // Learned targets (VkTexImage.fb_learned) are attached in the feedback layout
     VkImage want[9];
     VkImageAspectFlags wasp[9];
