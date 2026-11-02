@@ -43,10 +43,12 @@
 #define SCENE_H 900
 #define DTA_KIB 113664u      // DynamicTextureAllocatorMem, shipped
 #define SCENE_MAX 4096       // per side, as MacNativeGames' TOTK_RENDER_RES
+#define SHADOW_BASE 960      // the sun shadow map's base size (its cascades: a D16 array of 4 layers)
 
 static struct {
     int decided;
     unsigned ow, oh, sw, sh;   // output and scene
+    unsigned shadow;           // fixed sun shadow map size (TOTK_SHADOW_RES), 0: the game's own
     int scene_set;             // the scene differs from the game's 5/6 of the output
     int heapdef_ok;            // romfs.c serves the grown HeapDef
     int on;                    // res_init switched the patch sets on
@@ -95,19 +97,29 @@ static void decide(void) {
     if (fit < 1.0) R.scene_set = 1;
     R.sw = (unsigned)(sw * fit + 0.5);
     R.sh = (unsigned)(sh * fit + 0.5);
+    const char *sr = cfg_value("TOTK_SHADOW_RES");
+    if (strcmp(sr, "game")) {
+        unsigned n = (unsigned)atoi(sr);
+        if (n >= 256 && n <= 4096 && !(n & 7)) R.shadow = n;
+        else rt_log("resolution: TOTK_SHADOW_RES=%s is not game or a size 256..4096 (a multiple of 8); game", sr);
+    }
+}
+
+static uint64_t shadow_kib(void) {
+    return R.shadow > SHADOW_BASE ? ((uint64_t)R.shadow * R.shadow - SHADOW_BASE * SHADOW_BASE) * 8 * 3 / 1024 : 0;
 }
 
 static int bigger(void) {
     decide();
-    return R.ow != BASE_W || R.oh != BASE_H || R.scene_set;
+    return R.ow != BASE_W || R.oh != BASE_H || R.scene_set || shadow_kib();
 }
 
 uint64_t res_heap_extra_kib(void) {
     if (!bigger()) return 0;
     double grow = fmax(0.0, (double)R.ow * R.oh / (BASE_W * BASE_H) - 1.0) +
                   fmax(0.0, (double)R.sw * R.sh / (SCENE_W * SCENE_H) - 1.0);
-    if (grow <= 0) return 0;
-    return (uint64_t)ceil(DTA_KIB * (1.0 + grow) / 1024.0) * 1024 - DTA_KIB;
+    uint64_t kib = grow > 0 ? (uint64_t)ceil(DTA_KIB * (1.0 + grow) / 1024.0) * 1024 - DTA_KIB : 0;
+    return kib + ((shadow_kib() + 1023) & ~1023ull);   // whole MiB
 }
 
 uint64_t res_heap_extra_bytes(void) { return ((res_heap_extra_kib() << 10) + 0x1fffff) & ~0x1fffffull; }
@@ -202,12 +214,43 @@ int res_heapdef_build(const void *in, size_t n, void **out, size_t *out_n) {
 
 void res_heapdef_served(void) { R.heapdef_ok = 1; }
 
+static void shadow_init(uint8_t *page) {
+    if (!R.shadow) {
+        rt_log("resolution: sun shadow map sized by the game (TOTK_SHADOW_RES=game)");
+        return;
+    }
+    int set = rt_patch_set("shadow");
+    if (set < 0) {
+        rt_log("resolution: the generated C has no shadow patch set: the game sizes its shadow map");
+        return;
+    }
+    int32_t n = (int32_t)R.shadow;
+    memcpy(page + 92, &n, 4);
+    rt_patch_switch(set, 1);
+    rt_log("resolution: sun shadow map %ux%u (TOTK_SHADOW_RES)", R.shadow, R.shadow);
+}
+
+static void res_shadow_range(void) {
+    int pct = cfg_int("TOTK_SHADOW_RANGE"), set = rt_patch_set("cascade");
+    if (pct == 100) return;
+    if (set < 0) {
+        rt_log("resolution: the generated C has no cascade patch set; shadow_range stays 100");
+        return;
+    }
+    float k = (float)(pct < 50 ? 50 : pct > 400 ? 400 : pct) / 100.0f, d[4] = {20 * k, 40 * k, 80 * k, 160 * k};
+    memcpy((uint8_t *)rt_patch_page() + 64, d, sizeof d);
+    rt_patch_switch(set, 1);
+    rt_log("resolution: shadow cascades end at %g, %g, %g and %g m", d[0], d[1], d[2], d[3]);
+}
+
 // ---- start: the patch page and the sets
 static uint64_t pack(unsigned w, unsigned h) { return (uint64_t)h << 32 | w; }
 
 void res_init(void) {
+    res_shadow_range();
     if (!bigger()) {
         rt_log("resolution: the game's own (output 1920x1080, scene 1600x900)");
+        shadow_init(rt_patch_page());
         return;
     }
     int output = rt_patch_set("output"), scene = rt_patch_set("scene");
@@ -247,6 +290,7 @@ void res_init(void) {
     } else {
         rt_patch_switch(aspect, 0);
     }
+    shadow_init(page);
     rt_log("resolution: output %ux%u, scene %ux%u%s; texture heap +%llu KiB", R.ow, R.oh, R.sw, R.sh,
            scene_on ? "" : " (the game's own 5/6 of the output)", (unsigned long long)res_heap_extra_kib());
 }

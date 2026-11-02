@@ -194,6 +194,8 @@
 # mouse_sens = 1
 # Write the input of this run to a file that replays as a script (docs/controls.md, "Scripted input"). Default: off.
 # input_record = input.txt
+# Folder for amiibo dumps (.bin or .nfc, 540 bytes each). The Amiibo tab of the settings menu (F1) uses it; empty uses a default beside the profile.
+# amiibo_dir =
 # Remap buttons: the Controls tab of the settings menu (F1) writes these lines. One line per Switch button or stick
 # direction: bind_<A B X Y L R ZL ZR PLUS MINUS LEFT UP RIGHT DOWN LCLICK RCLICK> or bind_<LSTICK RSTICK>_<LEFT UP RIGHT
 # DOWN> = comma separated pad:<name> and key:<name> entries, key:default / pad:default for that part's defaults, or none.
