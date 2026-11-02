@@ -2897,6 +2897,10 @@ static void lb_warm_prepared(const char *dir) {
     LB.n = n, LB.idle = 0, LB.t0 = now_ms();
     static const uint32_t no_pr[16], no_fs[4];
     lb_state(no_pr, no_fs);
+    // --prepare-shaders and --warm-shaders never save pipeline-cache.bin: what they fill is the driver's own disk cache.
+    // Building through P.cache only grew it in memory with every library, so the builds go without it.
+    VkPipelineCache cache = P.cache;
+    P.cache = VK_NULL_HANDLE;
     int cpus = (int)GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
     const char *te = cfg_get("TOTK_LIB_PREBUILD_THREADS");   // same default as boot prebuild: a quarter of the CPUs
     int t = te && *te ? atoi(te) : cpus / 4;
@@ -2911,6 +2915,7 @@ static void lb_warm_prepared(const char *dir) {
         WaitForMultipleObjects((DWORD)(k - i < MAXIMUM_WAIT_OBJECTS ? k - i : MAXIMUM_WAIT_OBJECTS), th + i, TRUE,
                                INFINITE);
     for (int i = 0; i < k; i++) CloseHandle(th[i]);
+    P.cache = cache;
     lb_report("preparation done");
     printf("prepare-shaders: %zu variants built into the driver cache on %d threads in %.0f ms\n", n, k, now_ms() - LB.t0);
     free(LB.e), LB.e = NULL, LB.n = 0, LB.next = 0, LB.done = 0;
