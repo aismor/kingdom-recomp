@@ -366,10 +366,42 @@ def sys_version(out):
 
 
 APPRUN = '''#!/bin/sh
-# The AppImage entry: the setup window, run by the bundled Python from the read-only mount (no bytecode written there).
+# AppImage entry: the setup window, then shader translation on the host GPU (same split as kingdom-setup.sh).
+# The GUI prepare step only writes seed files when KINGDOM_PENDING_SHADERS is set; totk --prepare-shaders runs here.
 HERE="$(dirname "$(readlink -f "$0")")"
 export PYTHONDONTWRITEBYTECODE=1
-exec "$HERE/python/bin/python3" -m installer.gui "$@"
+PY="$HERE/python/bin/python3"
+PENDING="${XDG_RUNTIME_DIR:-/tmp}/kingdom-pending-shaders.$$"
+: > "$PENDING"
+export KINGDOM_PENDING_SHADERS="$PENDING"
+# -P: without it `-m` puts the current directory first on sys.path, and started from a repository checkout the window
+# imports that checkout's installer/ (dev layout, host clang without SDL3) instead of this release's.
+"$PY" -P -m installer.gui "$@" || true
+sort -u "$PENDING" | while IFS= read -r dest; do
+    [ -n "$dest" ] && [ -x "$dest/totk" ] && [ -f "$dest/seed-answers.bin" ] || continue
+    missing=$(ldd "$dest/totk" 2>/dev/null | awk '/not found/ {print $1}')
+    if [ -n "$missing" ]; then
+        echo "totk needs libraries the system lacks: $missing" >&2
+        continue
+    fi
+    if [ ! -f "$dest/shader-prepared.bin" ]; then
+        echo "Preparing shaders in $dest (uses the GPU; a few minutes)..." >&2
+        threads="${TOTK_LIB_PREBUILD_THREADS:-}"
+        if [ -z "$threads" ]; then
+            cpus=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
+            threads=$((cpus / 4))
+            [ "$threads" -lt 1 ] && threads=1
+            [ "$threads" -gt 16 ] && threads=16
+        fi
+        (cd "$dest" && TOTK_LIB_PREBUILD_THREADS="$threads" ./totk --prepare-shaders) ||
+            echo "Shader preparation failed; the game still runs, with stutter at first." >&2
+    fi
+    if [ -d "$dest/shader-cache" ]; then
+        "$PY" "$HERE/tools/pack_shader_cache.py" "$dest/shader-cache" ||
+            echo "Shader cache packing failed; the game still runs." >&2
+    fi
+done
+rm -f "$PENDING"
 '''
 
 DESKTOP = '''[Desktop Entry]
@@ -379,7 +411,7 @@ Comment=Builds Tears of the Kingdom for this PC from your own game files
 Exec=AppRun
 Icon=kingdom-setup
 Categories=Game;
-Terminal=false
+Terminal=true
 '''
 
 
