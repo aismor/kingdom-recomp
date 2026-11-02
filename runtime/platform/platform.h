@@ -125,3 +125,22 @@ PlatChild *plat_child_start(const char *exe, const char *arg, uint32_t *err);
 void plat_child_stop(PlatChild *c);                       // kills the child and frees c
 int plat_child_write(PlatChild *c, const void *data, size_t n);   // 1 when all n bytes were written
 long plat_child_read(PlatChild *c, void *buf, size_t cap);        // bytes read (at least 1); 0 or negative: pipe broke
+
+// ---- atomics: full barriers, explicit widths. The value returned is noted per function: new for inc/dec/add,
+// previous for xadd/xchg/cas/or.
+#define PLAT_SC __ATOMIC_SEQ_CST
+static inline int32_t plat_inc32(volatile int32_t *p) { return __atomic_add_fetch(p, 1, PLAT_SC); }
+static inline int32_t plat_dec32(volatile int32_t *p) { return __atomic_sub_fetch(p, 1, PLAT_SC); }
+static inline int32_t plat_add32(volatile int32_t *p, int32_t v) { return __atomic_add_fetch(p, v, PLAT_SC); }
+static inline int32_t plat_xadd32(volatile int32_t *p, int32_t v) { return __atomic_fetch_add(p, v, PLAT_SC); }
+static inline int32_t plat_xchg32(volatile int32_t *p, int32_t v) { return __atomic_exchange_n(p, v, PLAT_SC); }
+static inline int32_t plat_cas32(volatile int32_t *p, int32_t xchg, int32_t cmp) {
+    __atomic_compare_exchange_n(p, &cmp, xchg, 0, PLAT_SC, PLAT_SC);
+    return cmp;
+}
+static inline int64_t plat_inc64(volatile int64_t *p) { return __atomic_add_fetch(p, 1, PLAT_SC); }
+static inline int64_t plat_dec64(volatile int64_t *p) { return __atomic_sub_fetch(p, 1, PLAT_SC); }
+static inline int64_t plat_add64(volatile int64_t *p, int64_t v) { return __atomic_add_fetch(p, v, PLAT_SC); }
+static inline int64_t plat_xadd64(volatile int64_t *p, int64_t v) { return __atomic_fetch_add(p, v, PLAT_SC); }
+static inline int64_t plat_xchg64(volatile int64_t *p, int64_t v) { return __atomic_exchange_n(p, v, PLAT_SC); }
+static inline int64_t plat_or64(volatile int64_t *p, int64_t v) { return __atomic_fetch_or(p, v, PLAT_SC); }

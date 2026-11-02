@@ -133,6 +133,10 @@ int vk_exec_targets_recent(VkExec *ex, int any);
 // The current pass's targets with their formats, extents and the frames they were last rendered in (diagnostics).
 void vk_exec_targets_describe(VkExec *ex, char *buf, size_t cap);
 
+// vk_hdr.c: with TOTK_HDR=1, notes a draw into a presented window texture (vk_hdr_track: set by the first present).
+extern int vk_hdr_track;
+void vk_hdr_draw(VkExec *ex, const VkPipeInfo *info);
+
 // TOTK_TRACE=gfx: replay counters of the current frame, logged and reset at each present (vk_exec_frame_log).
 typedef struct {
     uint64_t passes, draws_seen, draws, clears, copies, dispatches, submits;
