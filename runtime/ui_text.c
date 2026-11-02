@@ -65,9 +65,16 @@ static const char *const text_en[UI_TEXT_COUNT] = {
     [UI_MENU_ASPECT] = "Picture shape",
     [UI_MENU_ASPECT_DESC] = "Keep the game's shape with black bars when it differs from the window, or stretch it.",
     [UI_MENU_ASPECT_FIT] = "Black bars", [UI_MENU_ASPECT_STRETCH] = "Stretch",
-    [UI_MENU_DLAA] = "NVIDIA DLAA",
-    [UI_MENU_DLAA_DESC] = "DLSS anti-aliasing at native 3D resolution on NVIDIA RTX GPUs. Requires nvngx_dlss.dll next "
-                          "to totk.exe and a restart.",
+    [UI_MENU_DLAA] = "NVIDIA DLSS / DLAA",
+    [UI_MENU_DLAA_DESC] = "NVIDIA DLSS for the 3D scene (NVIDIA RTX GPUs; nvngx_dlss.dll next to totk.exe): smoother edges "
+                          "and less shimmer. The HUD is not touched. The mode below sets the resolution it works from. Takes effect "
+                          "after a restart.",
+    [UI_MENU_DLSS] = "DLSS mode",
+    [UI_MENU_DLSS_DESC] = "DLAA draws the 3D scene at full resolution. Quality, Balanced and Performance draw it at 67, 58 "
+                          "and 50 % and let DLSS scale it up, for more frames per second; they replace the 3D render "
+                          "scale. Takes effect after a restart.",
+    [UI_MENU_DLSS_DLAA] = "DLAA (native)", [UI_MENU_DLSS_QUALITY] = "Quality", [UI_MENU_DLSS_BALANCED] = "Balanced",
+    [UI_MENU_DLSS_PERFORMANCE] = "Performance",
     [UI_MENU_FXAA] = "Game anti-aliasing (FXAA)",
     [UI_MENU_FXAA_DESC] = "The game's FXAA slightly blurs fine detail; it is not needed with DLAA.",
     [UI_MENU_SHARPNESS] = "FSR sharpness",
@@ -341,9 +348,16 @@ static const char *const text_ru[UI_TEXT_COUNT] = {
     [UI_MENU_ASPECT] = "Форма картинки",
     [UI_MENU_ASPECT_DESC] = "Сохранить форму игры с чёрными полосами или растянуть её на всё окно.",
     [UI_MENU_ASPECT_FIT] = "Чёрные полосы", [UI_MENU_ASPECT_STRETCH] = "Растянуть",
-    [UI_MENU_DLAA] = "NVIDIA DLAA",
-    [UI_MENU_DLAA_DESC] = "Сглаживание DLSS в исходном разрешении 3D на NVIDIA RTX. Требуется nvngx_dlss.dll рядом с "
-                          "totk.exe и перезапуск.",
+    [UI_MENU_DLAA] = "NVIDIA DLSS / DLAA",
+    [UI_MENU_DLAA_DESC] = "NVIDIA DLSS для 3D-сцены (видеокарты NVIDIA RTX; nvngx_dlss.dll рядом с totk.exe): ровнее края и "
+                          "меньше мерцания. Интерфейс не затрагивается. Режим ниже задаёт разрешение, с которым он работает. "
+                          "Действует после перезапуска.",
+    [UI_MENU_DLSS] = "Режим DLSS",
+    [UI_MENU_DLSS_DESC] = "DLAA рисует 3D-сцену в полном разрешении. «Качество», «Баланс» и «Производительность» рисуют её "
+                          "в 67, 58 и 50 % и масштабируют через DLSS ради большего числа кадров; они заменяют масштаб "
+                          "3D-отрисовки. Действует после перезапуска.",
+    [UI_MENU_DLSS_DLAA] = "DLAA (родное)", [UI_MENU_DLSS_QUALITY] = "Качество", [UI_MENU_DLSS_BALANCED] = "Баланс",
+    [UI_MENU_DLSS_PERFORMANCE] = "Производительность",
     [UI_MENU_FXAA] = "Сглаживание игры (FXAA)",
     [UI_MENU_FXAA_DESC] = "FXAA игры слегка размывает мелкие детали; с DLAA оно не требуется.",
     [UI_MENU_SHARPNESS] = "Резкость FSR",
@@ -622,9 +636,18 @@ static const char *const text_pt[UI_TEXT_COUNT] = {
     [UI_MENU_ASPECT] = "Formato da imagem",
     [UI_MENU_ASPECT_DESC] = "Mantém o formato do jogo com barras pretas ou estica a imagem para preencher a janela.",
     [UI_MENU_ASPECT_FIT] = "Barras pretas", [UI_MENU_ASPECT_STRETCH] = "Esticar",
-    [UI_MENU_DLAA] = "NVIDIA DLAA",
-    [UI_MENU_DLAA_DESC] = "Antisserrilhado DLSS na resolução 3D nativa em placas NVIDIA RTX. Requer nvngx_dlss.dll ao "
-                          "lado do totk.exe e reinicialização.",
+    [UI_MENU_DLAA] = "NVIDIA DLSS / DLAA",
+    [UI_MENU_DLAA_DESC] = "NVIDIA DLSS para a cena 3D (placas NVIDIA RTX; nvngx_dlss.dll ao lado do totk.exe): bordas "
+                          "mais suaves e menos cintilação. O HUD não é afetado. O modo abaixo define a resolução de "
+                          "onde ele parte. Vale após reiniciar.",
+    [UI_MENU_DLSS] = "Modo do DLSS",
+    [UI_MENU_DLSS_DESC] = "DLAA desenha a cena 3D na resolução cheia. Qualidade, Equilibrado e Desempenho a desenham "
+                          "em 67, 58 e 50 % e deixam o DLSS ampliá-la, para mais quadros por segundo; eles substituem "
+                          "a escala 3D. Vale após reiniciar.",
+    [UI_MENU_DLSS_DLAA] = "DLAA (nativo)",
+    [UI_MENU_DLSS_QUALITY] = "Qualidade",
+    [UI_MENU_DLSS_BALANCED] = "Equilibrado",
+    [UI_MENU_DLSS_PERFORMANCE] = "Desempenho",
     [UI_MENU_FXAA] = "Antisserrilhado do jogo (FXAA)",
     [UI_MENU_FXAA_DESC] = "O FXAA do jogo borra um pouco os detalhes; não é necessário com DLAA.",
     [UI_MENU_SHARPNESS] = "Nitidez FSR",

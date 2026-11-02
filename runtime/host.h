@@ -252,6 +252,7 @@ void res_init(void);                                       // after rt_patches_i
 void res_sizes(unsigned out[2], unsigned scene[2]);      // the output and scene sizes in effect (the game's own
                                                            // until res_init switched the sets on)
 void res_wanted(unsigned out[2]);                          // the output size TOTK_OUTPUT_RES asks for
+float res_dlss_lod_bias(void);                             // TOTK_DLSS upscaling: texture LOD bias (<= 0)
 // ---- code patches (patches.c) and the frame step (frame_rate.c)
 void rt_patches_init(void);                                // after ldr_load: switches from the environment, the patch
                                                            // page committed; logs the sets
