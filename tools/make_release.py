@@ -129,6 +129,13 @@ def fetch(name):
             shutil.copyfileobj(r, f)
     got = sha256_file(path)
     if got != want:
+        if path.is_file():
+            path.unlink()
+        print(f'download {url} (sha256 was {got}, expected {want})')
+        with urllib.request.urlopen(url) as r, open(path, 'wb') as f:
+            shutil.copyfileobj(r, f)
+        got = sha256_file(path)
+    if got != want:
         sys.exit(f'{path}: sha256 {got}, pinned {want}')
     return path
 
