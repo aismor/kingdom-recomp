@@ -53,7 +53,7 @@ static const char *const text_en[UI_TEXT_COUNT] = {
     [UI_MENU_GRAPHICS] = "Picture",
     [UI_MENU_OUTPUT_RES] = "Game resolution",
     [UI_MENU_OUTPUT_RES_DESC] = "The size the game draws its picture and interface in. Above 1920 x 1080 the game needs "
-                                "more video memory and GPU time.",
+                                "more video memory and GPU time. A wider size widens the camera and moves the HUD.",
     [UI_MENU_RENDER_SCALE] = "3D render scale",
     [UI_MENU_RENDER_SCALE_DESC] = "Size of the 3D scene relative to the game resolution; the game's FSR scales it to "
                                   "that size. Above 100 % smooths jagged edges (supersampling) at a high GPU cost.",
@@ -62,6 +62,9 @@ static const char *const text_en[UI_TEXT_COUNT] = {
     [UI_MENU_UPSCALER_DESC] = "How the picture is scaled when the window is larger than the game resolution. FSR keeps "
                               "edges and detail sharper than bilinear.",
     [UI_MENU_UPSCALER_FSR] = "AMD FSR 1", [UI_MENU_UPSCALER_BILINEAR] = "Bilinear",
+    [UI_MENU_ASPECT] = "Picture shape",
+    [UI_MENU_ASPECT_DESC] = "Keep the game's shape with black bars when it differs from the window, or stretch it.",
+    [UI_MENU_ASPECT_FIT] = "Black bars", [UI_MENU_ASPECT_STRETCH] = "Stretch",
     [UI_MENU_SHARPNESS] = "FSR sharpness",
     [UI_MENU_SHARPNESS_DESC] = "Sharpening after FSR scaling; 0 turns it off.",
     [UI_MENU_COLOR] = "Colour",
@@ -330,6 +333,9 @@ static const char *const text_ru[UI_TEXT_COUNT] = {
     [UI_MENU_UPSCALER_DESC] = "Как картинка растягивается, когда окно больше разрешения игры. FSR сохраняет края и "
                               "детали чётче билинейного.",
     [UI_MENU_UPSCALER_FSR] = "AMD FSR 1", [UI_MENU_UPSCALER_BILINEAR] = "Билинейное",
+    [UI_MENU_ASPECT] = "Форма картинки",
+    [UI_MENU_ASPECT_DESC] = "Сохранить форму игры с чёрными полосами или растянуть её на всё окно.",
+    [UI_MENU_ASPECT_FIT] = "Чёрные полосы", [UI_MENU_ASPECT_STRETCH] = "Растянуть",
     [UI_MENU_SHARPNESS] = "Резкость FSR",
     [UI_MENU_SHARPNESS_DESC] = "Повышение резкости после масштабирования FSR; 0 выключает его.",
     [UI_MENU_COLOR] = "Цвет",
@@ -603,6 +609,9 @@ static const char *const text_pt[UI_TEXT_COUNT] = {
     [UI_MENU_UPSCALER_DESC] = "Como a imagem é ampliada quando a janela é maior que a resolução do jogo. FSR mantém "
                               "bordas e detalhes mais nítidos que bilinear.",
     [UI_MENU_UPSCALER_FSR] = "AMD FSR 1", [UI_MENU_UPSCALER_BILINEAR] = "Bilinear",
+    [UI_MENU_ASPECT] = "Formato da imagem",
+    [UI_MENU_ASPECT_DESC] = "Mantém o formato do jogo com barras pretas ou estica a imagem para preencher a janela.",
+    [UI_MENU_ASPECT_FIT] = "Barras pretas", [UI_MENU_ASPECT_STRETCH] = "Esticar",
     [UI_MENU_SHARPNESS] = "Nitidez FSR",
     [UI_MENU_SHARPNESS_DESC] = "Nitidez após a escala FSR; 0 desliga.",
     [UI_MENU_COLOR] = "Cor",

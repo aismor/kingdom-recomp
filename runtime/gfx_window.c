@@ -740,6 +740,22 @@ static void save_capture(const char *path) {
     rt_log("gfx: menu test shot %s (%dx%d)", path, g_cap_w, g_cap_h);
 }
 
+static int fit_rect(int cw, int ch, int sw, int sh, int out[4]) {
+    out[0] = 0, out[1] = 0, out[2] = sw, out[3] = sh;
+    if (cw <= 0 || ch <= 0 || strcmp(cfg_value("TOTK_ASPECT"), "fit")) return 0;
+    long long a = (long long)cw * sh, b = (long long)ch * sw;
+    if (a < b) {
+        int fw = (int)((a + ch / 2) / ch);
+        if (fw >= sw - 1) return 0;
+        out[0] = (sw - fw) / 2, out[2] = fw;
+    } else if (a > b) {
+        int fh = (int)(((long long)ch * sw + cw / 2) / cw);
+        if (fh >= sh - 1) return 0;
+        out[1] = (sh - fh) / 2, out[3] = fh;
+    } else return 0;
+    return 1;
+}
+
 static void present_image(VkImage src, VkImageLayout layout, VkFormat fmt, int w, int h, const int crop[4], int defer) {
     int general = layout == VK_IMAGE_LAYOUT_GENERAL;
     gfx_window_start();
@@ -802,10 +818,18 @@ static void present_image(VkImage src, VkImageLayout layout, VkFormat fmt, int w
     VkImage psrc = graded ? graded : src;
     VkFormat pfmt = graded ? VK_FORMAT_R16G16B16A16_SFLOAT : fmt;
     const int *prect = graded ? grect : rect;
+    int to[4];
+    if (fit_rect(cw, ch, (int)g_sc_ext.width, (int)g_sc_ext.height, to)) {
+        VkClearColorValue black = {{0, 0, 0, 1}};
+        VkImageSubresourceRange all = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        vkCmdClearColorImage(cb, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1, &all);
+        sync_barrier(cb, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                     VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                     VK_ACCESS_2_TRANSFER_WRITE_BIT);
+    }
     // FSR (TOTK_UPSCALER) when the swapchain is larger than the crop; else the bilinear blit
-    int fsr = general && vk_fsr_record(cb, slot, psrc, pfmt, graded ? cw : w, graded ? ch : h, prect, dst,
-                                       g_sc_ext.width, g_sc_ext.height);
-    g_scaler = fsr ? 2 : (uint32_t)cw != g_sc_ext.width || (uint32_t)ch != g_sc_ext.height;
+    int fsr = general && vk_fsr_record(cb, slot, psrc, pfmt, graded ? cw : w, graded ? ch : h, prect, dst, to);
+    g_scaler = fsr ? 2 : cw != to[2] || ch != to[3];
     if (!fsr) {
         if (general)   // a GENERAL source (vk_texture.c images): earlier submissions' writes become visible to the blit here
             sync_barrier(cb, psrc, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
@@ -813,7 +837,8 @@ static void present_image(VkImage src, VkImageLayout layout, VkFormat fmt, int w
         VkImageBlit region = {
             .srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
             .srcOffsets = {{prect[0], prect[1], 0}, {prect[0] + cw, prect[1] + ch, 1}},
-            .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, .dstOffsets = {{0, 0, 0}, {(int)g_sc_ext.width, (int)g_sc_ext.height, 1}}};
+            .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+            .dstOffsets = {{to[0], to[1], 0}, {to[0] + to[2], to[1] + to[3], 1}}};
         vkCmdBlitImage(cb, psrc, general ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dst,
                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region, VK_FILTER_LINEAR);
         if (general)   // later submissions that write the source wait for the blit's read

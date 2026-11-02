@@ -115,6 +115,9 @@
 # from 0 (off) to 100. Changes while the game runs take effect at once.
 # upscaler = fsr
 # sharpness = 80
+# Picture shape when the window differs from the game resolution: fit keeps the shape with black bars; stretch fills
+# the window. Changes while the game runs take effect at once.
+# aspect = fit
 # Colour profile: default (the game's picture), vivid (more contrast and saturation for OLED), clarity (a small boost),
 # or custom. The four live values below are brightness added in percent, contrast and saturation in percent, and gamma.
 # color_preset = default

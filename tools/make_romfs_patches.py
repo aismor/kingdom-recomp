@@ -17,6 +17,7 @@ build/<version>/romfs-patches/<path> by default, and <out>/manifest.tsv (path, s
 import argparse
 import compression.zstd as zstd
 import hashlib
+import importlib.util
 import json
 import struct
 from pathlib import Path
@@ -26,6 +27,7 @@ ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
 ap.add_argument('--version', choices=('v121', 'v143'), default='v121')
 ap.add_argument('--romfs', type=Path, help='default build/extracted/<version>/romfs')
 ap.add_argument('--out', type=Path, help='default build/<version>/romfs-patches')
+ap.add_argument('--aspect', help='<w>x<h> game resolution: lay the UI out for that shape')
 args = ap.parse_args()
 args.romfs = args.romfs or root / 'build/extracted' / args.version / 'romfs'
 args.out = args.out or root / 'build' / args.version / 'romfs-patches'
@@ -115,8 +117,16 @@ for member, panes in MEMBERS.items():
         changed.append(name)
     assert sorted(changed) == sorted(panes), (member, changed)
     patched[member] = changed
+layout = []
+if args.aspect:
+    width, height = (int(v) for v in args.aspect.lower().split('x'))
+    spec = importlib.util.spec_from_file_location('ultrawide_layout', Path(__file__).with_name('ultrawide_layout.py'))
+    ultrawide = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ultrawide)
+    layout = ultrawide.apply(blarc, members, width, height)
 diff = [i for i in range(len(original)) if original[i] != blarc[i]]
-assert diff and all(any(lo <= i < hi for lo, hi in (members[m] for m in MEMBERS)) for i in diff), diff
+touched = [members[m] for m in (*MEMBERS, *layout)]
+assert diff and all(any(lo <= i < hi for lo, hi in touched) for i in diff), diff
 data = zstd.compress(bytes(blarc), level=19, zstd_dict=dictionary)
 assert zstd.decompress(data, zstd_dict=dictionary) == bytes(blarc)
 assert zstd.get_frame_info(data).dictionary_id == info.dictionary_id
