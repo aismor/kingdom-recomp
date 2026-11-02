@@ -27,6 +27,7 @@
  "phase.prepare.seed": "Чтение шейдеров из данных игры",
  "phase.prepare.translate": "Трансляция шейдеров",
  "phase.prepare.libraries": "Сборка шейдеров для драйвера видеокарты",
+ "phase.prepare.pack": "Упаковка кэша шейдеров в один файл",
  "phase.cleanup.ini": "Запись totk.ini",
  "phase.cleanup.temp": "Удаление временных файлов",
 
@@ -76,6 +77,7 @@
  "prepare.shader_list_missing": "Нет списка шейдеров.",
  "prepare.romfs_patches_failed": "Не удалось записать патчи данных игры (код выхода {code}). Подробности: {log}",
  "prepare.shaders_failed": "Не удалось подготовить шейдеры (код выхода {code}). Подробности: {log}",
+ "prepare.pack_failed": "Не удалось упаковать кэш шейдеров (код выхода {code}). Подробности: {log}",
  "cleanup.ini_failed": "Не удаётся записать totk.ini: {detail}",
 
  "warn.lang_needs_fonts": "Для языка «{lang}» нужны системные шрифты Switch, которые установка не извлекает; часть текста может не отображаться.",

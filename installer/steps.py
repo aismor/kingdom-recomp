@@ -668,8 +668,9 @@ class Prepare(Step):
     def key(self, ctx):
         layout = ctx.layout
         xlate_id = layout.xlate.with_suffix('.id')
-        tools = [layout.tools / n for n in ('prepare_shaders.py', 'shader_census.py', 'make_romfs_patches.py')]
-        return fingerprint('prepare-1', ctx.keys['compile'], layout.xlate, xlate_id, shader_list_text(layout), *tools)
+        tools = [layout.tools / n for n in ('prepare_shaders.py', 'shader_census.py', 'make_romfs_patches.py',
+                                            'pack_shader_cache.py')]
+        return fingerprint('prepare-2', ctx.keys['compile'], layout.xlate, xlate_id, shader_list_text(layout), *tools)
 
     @staticmethod
     def done_file():
@@ -730,6 +731,13 @@ class Prepare(Step):
             remove(dest / 'shader-prepared.bin')   # older than these seeds: the host translates them again
             with open(pending, 'a', encoding='utf-8') as f:
                 f.write(f'{dest}\n')
+        else:
+            # One shader-cache.pack instead of four files per shader. The Linux launcher does this after its host-side
+            # GPU preparation instead, because the container only writes the seed files here.
+            rep.progress('prepare', 'pack', force=True)
+            code, log = run_tool(ctx, 'prepare', layout.tools / 'pack_shader_cache.py', [dest / 'shader-cache'])
+            if code:
+                raise InstallError('prepare.pack_failed', code=code, log=str(log))
         return {'xlate_sha256': file_sha256(xlate)}
 
 

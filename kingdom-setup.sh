@@ -138,6 +138,10 @@ sort -u "$PENDING" | while IFS= read -r dest; do
         say "preparing shaders in $dest (a few minutes, uses the GPU)..."
         (cd "$dest" && ./totk --prepare-shaders) || say "shader preparation failed; the game still runs, with stutter at first"
     fi
+    if [[ -d "$dest/shader-cache" ]]; then
+        say "packing the shader cache in $dest..."
+        python3 "$ROOT/tools/pack_shader_cache.py" "$dest/shader-cache" || say "shader cache packing failed; the game still runs"
+    fi
     say "ready: cd \"$dest\" && ./totk"
 done
 rm -f "$PENDING"

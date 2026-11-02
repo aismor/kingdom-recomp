@@ -752,7 +752,7 @@ def main():
                 VMA_INCLUDE = Path(flag[2:])
                 break
         else:
-            for cand in (Path('/usr/include/vma'), Path('/usr/local/include/vma')):
+            for cand in (ROOT / 'toolchain' / 'vma', Path('/usr/include/vma'), Path('/usr/local/include/vma')):
                 if (cand / 'vk_mem_alloc.h').is_file():
                     VMA_INCLUDE = cand
                     break
