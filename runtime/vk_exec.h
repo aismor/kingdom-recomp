@@ -33,6 +33,7 @@ typedef struct {
     uint8_t is3d;                        // a 3D image (colour only), viewed through 2D views of its slices
     uint8_t blocks;                      // a BC image viewed as one texel per block (VkTexImage.block_views)
     uint32_t width, height, samples;     // extent of that level; with blocks, in blocks
+    uint8_t scale;                       // VkTexImage.scale
     int32_t nvn_format;                  // NVNformat of the view (VkPipeState.color_fmt / depth_fmt)
     const VkTexImage *img;               // the image (fb_usage, fb_learned)
 } VkExecTarget;
@@ -53,6 +54,7 @@ typedef struct VkExec {
     VkExecTarget color[8], depth;        // resolved targets
     uint32_t pass_w, pass_h, pass_layers;            // render area and layer count of the open (or next) pass
     int pass_noatt;                                   // the pass has no attachment: its size follows the draws (vk_exec_noatt_dims)
+    uint32_t pass_scale;                             // its targets' VkTexImage.scale: game viewports and scissors
     VkFormat pass_color[8], pass_depth, pass_stencil; // attachment formats of the pass (VkPipelineRenderingCreateInfo);
                                                       // VK_FORMAT_UNDEFINED: none
     uint32_t pass_ncolor, pass_samples;               // colorAttachmentCount and rasterization samples of the pass
@@ -133,6 +135,10 @@ int vk_exec_targets_recent(VkExec *ex, int any);
 // The current pass's targets with their formats, extents and the frames they were last rendered in (diagnostics).
 void vk_exec_targets_describe(VkExec *ex, char *buf, size_t cap);
 
+// vk_hdr.c: with TOTK_HDR=1, notes a draw into a presented window texture (vk_hdr_track: set by the first present).
+extern int vk_hdr_track;
+void vk_hdr_draw(VkExec *ex, const VkPipeInfo *info);
+
 // TOTK_TRACE=gfx: replay counters of the current frame, logged and reset at each present (vk_exec_frame_log).
 typedef struct {
     uint64_t passes, draws_seen, draws, clears, copies, dispatches, submits;
@@ -177,3 +183,6 @@ void vk_exec_op_xfer(VkExec *ex, uint32_t op, const void *payload);
 // when counting and none is active), and the open pass about to end (ends the active query).
 void vk_exec_oq_draw(VkExec *ex);
 void vk_exec_oq_pass_end(VkExec *ex);
+// vk_contact.c: a pass about to begin (its targets resolved, no pass open), and a dispatch or copy about to be recorded
+void vk_contact_pass_begin(VkExec *ex);
+void vk_contact_flush(VkExec *ex);

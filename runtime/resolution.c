@@ -7,11 +7,13 @@
 //
 // Settings, read at start: TOTK_OUTPUT_RES = <w>x<h> (default 1920x1080, the game's own), TOTK_RENDER_SCALE = the
 // scene's size relative to the output: "game" (default, 5/6, the game's 1600x900 at 1080p) or a percentage; above 100
-// the game supersamples its scene, which smooths edges (anti-aliasing) at the cost of GPU time. The game's own final
-// pass (FSR 1 EASU) scales the scene to the output; the present scales the output to the window (vk_fsr.c).
+// the game supersamples its scene, which smooths edges (anti-aliasing) at the cost of GPU time. With TOTK_DLAA on,
+// TOTK_DLSS quality/balanced/performance sets the scene size instead (67 %, 58 % or 50 % of the output). The game's own
+// final pass (FSR 1 EASU) scales the scene to the output; the present scales the output to the window (vk_fsr.c).
 //
 // Patch page: +16 the scene size {w, h} as floats, +32 the output size and +48 the swapchain size as {w, h} in one
 // 64-bit word, +40 the renderer (1.2.1) or display configuration (1.4.3) the patched code stores there.
+// +56 the camera's aspect ratio as a float when the output is not 16:9 (1.4.3, set aspect).
 // 1.4.3 scales the scene it reads by output width / 1920 (a 2560x1440 output renders its 1600x900 scene at 2128x1200;
 // MacNativeGames measured the same), so its page holds the wanted size divided by that factor and the game's 5/6 needs
 // no scene patch. 1.2.1 renders the size it reads (1600x900 on a 2560x1440 output): its page holds the wanted size, and
@@ -41,13 +43,16 @@
 #define SCENE_H 900
 #define DTA_KIB 113664u      // DynamicTextureAllocatorMem, shipped
 #define SCENE_MAX 4096       // per side, as MacNativeGames' TOTK_RENDER_RES
+#define SHADOW_BASE 960      // the sun shadow map's base size (its cascades: a D16 array of 4 layers)
 
 static struct {
     int decided;
     unsigned ow, oh, sw, sh;   // output and scene
+    unsigned shadow;           // fixed sun shadow map size (TOTK_SHADOW_RES), 0: the game's own
     int scene_set;             // the scene differs from the game's 5/6 of the output
     int heapdef_ok;            // romfs.c serves the grown HeapDef
     int on;                    // res_init switched the patch sets on
+    double dlss_k;             // TOTK_DLSS quality/balanced/performance: the scene's share of the output, else 0
 } R;
 
 static void decide(void) {
@@ -66,7 +71,18 @@ static void decide(void) {
     }
     const char *s = cfg_value("TOTK_RENDER_SCALE");
     double k = 5.0 / 6.0;
-    if (strcmp(s, "game")) {
+    // a DLSS mode other than dlaa sets the scene size, only while DLSS/DLAA is on: switched off, the mode the menu
+    // still holds would shrink the scene for the plain upscaler
+    const char *m = cfg_value("TOTK_DLSS");
+    static const struct { const char *name; double k; } dlss[] = {
+        {"quality", 2.0 / 3.0}, {"balanced", 0.58}, {"performance", 0.5}};
+    for (int i = 0; cfg_bool("TOTK_DLAA") && i < 3; i++)
+        if (!strcmp(m, dlss[i].name)) R.dlss_k = dlss[i].k;
+    if (R.dlss_k) {
+        k = R.dlss_k;
+        R.scene_set = 1;
+        rt_log("resolution: DLSS %s: the scene at %.0f %% of the output (render_scale ignored)", m, k * 100);
+    } else if (strcmp(s, "game")) {
         char *end;
         double pct = strtod(s, &end);
         if (end != s && !*end && pct >= 25 && pct <= 400) {
@@ -81,19 +97,29 @@ static void decide(void) {
     if (fit < 1.0) R.scene_set = 1;
     R.sw = (unsigned)(sw * fit + 0.5);
     R.sh = (unsigned)(sh * fit + 0.5);
+    const char *sr = cfg_value("TOTK_SHADOW_RES");
+    if (strcmp(sr, "game")) {
+        unsigned n = (unsigned)atoi(sr);
+        if (n >= 256 && n <= 4096 && !(n & 7)) R.shadow = n;
+        else rt_log("resolution: TOTK_SHADOW_RES=%s is not game or a size 256..4096 (a multiple of 8); game", sr);
+    }
+}
+
+static uint64_t shadow_kib(void) {
+    return R.shadow > SHADOW_BASE ? ((uint64_t)R.shadow * R.shadow - SHADOW_BASE * SHADOW_BASE) * 8 * 3 / 1024 : 0;
 }
 
 static int bigger(void) {
     decide();
-    return R.ow != BASE_W || R.oh != BASE_H || R.scene_set;
+    return R.ow != BASE_W || R.oh != BASE_H || R.scene_set || shadow_kib();
 }
 
 uint64_t res_heap_extra_kib(void) {
     if (!bigger()) return 0;
     double grow = fmax(0.0, (double)R.ow * R.oh / (BASE_W * BASE_H) - 1.0) +
                   fmax(0.0, (double)R.sw * R.sh / (SCENE_W * SCENE_H) - 1.0);
-    if (grow <= 0) return 0;
-    return (uint64_t)ceil(DTA_KIB * (1.0 + grow) / 1024.0) * 1024 - DTA_KIB;
+    uint64_t kib = grow > 0 ? (uint64_t)ceil(DTA_KIB * (1.0 + grow) / 1024.0) * 1024 - DTA_KIB : 0;
+    return kib + ((shadow_kib() + 1023) & ~1023ull);   // whole MiB
 }
 
 uint64_t res_heap_extra_bytes(void) { return ((res_heap_extra_kib() << 10) + 0x1fffff) & ~0x1fffffull; }
@@ -188,12 +214,43 @@ int res_heapdef_build(const void *in, size_t n, void **out, size_t *out_n) {
 
 void res_heapdef_served(void) { R.heapdef_ok = 1; }
 
+static void shadow_init(uint8_t *page) {
+    if (!R.shadow) {
+        rt_log("resolution: sun shadow map sized by the game (TOTK_SHADOW_RES=game)");
+        return;
+    }
+    int set = rt_patch_set("shadow");
+    if (set < 0) {
+        rt_log("resolution: the generated C has no shadow patch set: the game sizes its shadow map");
+        return;
+    }
+    int32_t n = (int32_t)R.shadow;
+    memcpy(page + 92, &n, 4);
+    rt_patch_switch(set, 1);
+    rt_log("resolution: sun shadow map %ux%u (TOTK_SHADOW_RES)", R.shadow, R.shadow);
+}
+
+static void res_shadow_range(void) {
+    int pct = cfg_int("TOTK_SHADOW_RANGE"), set = rt_patch_set("cascade");
+    if (pct == 100) return;
+    if (set < 0) {
+        rt_log("resolution: the generated C has no cascade patch set; shadow_range stays 100");
+        return;
+    }
+    float k = (float)(pct < 50 ? 50 : pct > 400 ? 400 : pct) / 100.0f, d[4] = {20 * k, 40 * k, 80 * k, 160 * k};
+    memcpy((uint8_t *)rt_patch_page() + 64, d, sizeof d);
+    rt_patch_switch(set, 1);
+    rt_log("resolution: shadow cascades end at %g, %g, %g and %g m", d[0], d[1], d[2], d[3]);
+}
+
 // ---- start: the patch page and the sets
 static uint64_t pack(unsigned w, unsigned h) { return (uint64_t)h << 32 | w; }
 
 void res_init(void) {
+    res_shadow_range();
     if (!bigger()) {
         rt_log("resolution: the game's own (output 1920x1080, scene 1600x900)");
+        shadow_init(rt_patch_page());
         return;
     }
     int output = rt_patch_set("output"), scene = rt_patch_set("scene");
@@ -218,12 +275,40 @@ void res_init(void) {
     rt_patch_switch(output, R.ow != BASE_W || R.oh != BASE_H);
     rt_patch_switch(scene, scene_on);
     R.on = 1;
+    double ratio = (double)R.ow / R.oh, game = (double)BASE_W / BASE_H;
+    int aspect = rt_patch_set("aspect");
+    if (ratio / game < 0.99 || ratio / game > 1.01) {
+        if (aspect < 0) {
+            rt_log("resolution: output %ux%u is not 16:9 and this game version has no camera aspect patch; the view "
+                   "is stretched", R.ow, R.oh);
+        } else {
+            float r = (float)ratio;
+            memcpy(page + 56, &r, sizeof r);
+            rt_patch_switch(aspect, 1);
+            rt_log("resolution: camera aspect ratio %.4f (16:9 is %.4f)", ratio, game);
+        }
+    } else {
+        rt_patch_switch(aspect, 0);
+    }
+    shadow_init(page);
     rt_log("resolution: output %ux%u, scene %ux%u%s; texture heap +%llu KiB", R.ow, R.oh, R.sw, R.sh,
            scene_on ? "" : " (the game's own 5/6 of the output)", (unsigned long long)res_heap_extra_kib());
+}
+
+void res_wanted(unsigned out[2]) {
+    decide();
+    out[0] = R.ow, out[1] = R.oh;
 }
 
 void res_sizes(unsigned out[2], unsigned scene[2]) {
     decide();
     out[0] = R.on ? R.ow : BASE_W, out[1] = R.on ? R.oh : BASE_H;
     scene[0] = R.on ? R.sw : SCENE_W, scene[1] = R.on ? R.sh : SCENE_H;
+}
+
+// DLSS upscaling: textures are sampled for the output's resolution, not the scene's (NVIDIA's DLSS guide: a mip bias
+// of log2(render / output)), so their detail survives the scaling. 0 without a DLSS mode.
+float res_dlss_lod_bias(void) {
+    decide();
+    return R.dlss_k ? (float)log2(R.dlss_k) : 0.0f;
 }

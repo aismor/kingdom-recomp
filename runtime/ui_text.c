@@ -29,7 +29,8 @@ static const char *const text_en[UI_TEXT_COUNT] = {
 
     [UI_MENU_TITLE] = "Settings",
     [UI_MENU_TAB_SCREEN] = "Screen", [UI_MENU_TAB_GAME] = "Game", [UI_MENU_TAB_MODS] = "Mods", [UI_MENU_TAB_CHEATS] = "Cheats",
-    [UI_MENU_TAB_SOUND] = "Sound", [UI_MENU_TAB_CONTROLS] = "Controls", [UI_MENU_TAB_MENU] = "Menu", [UI_MENU_TAB_ADVANCED] = "Advanced",
+    [UI_MENU_TAB_SOUND] = "Sound", [UI_MENU_TAB_CONTROLS] = "Controls", [UI_MENU_TAB_AMIIBO] = "Amiibo",
+    [UI_MENU_TAB_MENU] = "Menu", [UI_MENU_TAB_ADVANCED] = "Advanced",
     [UI_MENU_CONTINUE] = "Continue", [UI_MENU_QUIT] = "Quit game",
     [UI_MENU_ON] = "On", [UI_MENU_OFF] = "Off", [UI_MENU_AUTO] = "Automatic", [UI_MENU_DEFAULT_MARK] = "default",
     [UI_MENU_AFTER_RESTART] = "after restart", [UI_MENU_SET_BY_ENV] = "set by environment variable",
@@ -53,17 +54,78 @@ static const char *const text_en[UI_TEXT_COUNT] = {
     [UI_MENU_GRAPHICS] = "Picture",
     [UI_MENU_OUTPUT_RES] = "Game resolution",
     [UI_MENU_OUTPUT_RES_DESC] = "The size the game draws its picture and interface in. Above 1920 x 1080 the game needs "
-                                "more video memory and GPU time.",
+                                "more video memory and GPU time. A wider size widens the camera and moves the HUD.",
     [UI_MENU_RENDER_SCALE] = "3D render scale",
     [UI_MENU_RENDER_SCALE_DESC] = "Size of the 3D scene relative to the game resolution; the game's FSR scales it to "
                                   "that size. Above 100 % smooths jagged edges (supersampling) at a high GPU cost.",
     [UI_MENU_RENDER_SCALE_GAME] = "Game (83 %)",
+    [UI_MENU_SHADOW_RES] = "Shadow map size",
+    [UI_MENU_SHADOW_RES_DESC] = "Size of the sun's shadow map. The game's own size changes with the view, down to about 400 "
+                                "near the ground, so leaf shadows look blocky and jump; a fixed size keeps them still and "
+                                "sharper. Above 1024 the shadows cost more GPU time and video memory; 256 is coarser than the "
+                                "game's own and is for integrated GPUs short of memory bandwidth.",
+    [UI_MENU_SHADOW_RES_GAME] = "Game (changes)",
+    [UI_MENU_SHADOW_SCALE] = "Shadow resolution",
+    [UI_MENU_SHADOW_SCALE_DESC] = "Draws the sun's shadow maps this many times larger on each side than the game's 960x960: "
+                                  "sharper shadow edges and leaf shadows. Takes effect at the next start.",
+    [UI_MENU_SHADOW_RANGE] = "Shadow cascade range",
+    [UI_MENU_SHADOW_RANGE_DESC] = "Moves the steps where shadows turn softer (the game's 20, 40, 80 and 160 m) further "
+                                  "away. Spreads the shadow map over more ground: raise Shadow resolution with it. "
+                                  "Takes effect at the next start.",
+    [UI_MENU_CONTACT_SHADOWS] = "Contact shadows",
+    [UI_MENU_CONTACT_SHADOWS_DESC] = "Small sun shadows the shadow maps miss: at feet, under stones, in grass and creases. "
+                                     "Traced on the screen after lighting. Takes effect at the next start.",
+    [UI_MENU_PCSS] = "Soft shadows",
+    [UI_MENU_PCSS_DESC] = "Sun shadows sharp where an object meets the ground and softer the further the shadow falls "
+                          "(PCSS). 0 keeps the game's filter. Takes effect at the next start.",
     [UI_MENU_UPSCALER] = "Scaling to the window",
     [UI_MENU_UPSCALER_DESC] = "How the picture is scaled when the window is larger than the game resolution. FSR keeps "
                               "edges and detail sharper than bilinear.",
     [UI_MENU_UPSCALER_FSR] = "AMD FSR 1", [UI_MENU_UPSCALER_BILINEAR] = "Bilinear",
+    [UI_MENU_ASPECT] = "Picture shape",
+    [UI_MENU_ASPECT_DESC] = "Keep the game's shape with black bars when it differs from the window, or stretch it.",
+    [UI_MENU_ASPECT_FIT] = "Black bars", [UI_MENU_ASPECT_STRETCH] = "Stretch",
+    [UI_MENU_DLAA] = "NVIDIA DLSS / DLAA",
+    [UI_MENU_DLAA_DESC] = "NVIDIA DLSS for the 3D scene (NVIDIA RTX GPUs; nvngx_dlss.dll next to totk.exe): smoother edges "
+                          "and less shimmer. The HUD is not touched. The mode below sets the resolution it works from. Takes effect "
+                          "after a restart.",
+    [UI_MENU_DLSS] = "DLSS mode",
+    [UI_MENU_DLSS_DESC] = "DLAA draws the 3D scene at full resolution. Quality, Balanced and Performance draw it at 67, 58 "
+                          "and 50 % and let DLSS scale it up, for more frames per second; they replace the 3D render "
+                          "scale. Takes effect after a restart.",
+    [UI_MENU_DLSS_DLAA] = "DLAA (native)", [UI_MENU_DLSS_QUALITY] = "Quality", [UI_MENU_DLSS_BALANCED] = "Balanced",
+    [UI_MENU_DLSS_PERFORMANCE] = "Performance",
+    [UI_MENU_FXAA] = "Game anti-aliasing (FXAA)",
+    [UI_MENU_FXAA_DESC] = "The game's FXAA slightly blurs fine detail; it is not needed with DLAA.",
     [UI_MENU_SHARPNESS] = "FSR sharpness",
     [UI_MENU_SHARPNESS_DESC] = "Sharpening after FSR scaling; 0 turns it off.",
+    [UI_MENU_COLOR] = "Colour",
+    [UI_MENU_COLOR_PRESET] = "Colour profile",
+    [UI_MENU_COLOR_PRESET_DESC] = "Sets the four values below. Vivid: more contrast and saturation, shadows opened a "
+                                  "little (made for OLED screens). Clarity: a little more contrast, saturation and "
+                                  "brightness. Moving a value makes the profile Custom. The HUD changes with the picture; "
+                                  "this menu does not.",
+    [UI_MENU_COLOR_DEFAULT] = "Game's own", [UI_MENU_COLOR_VIVID] = "Vivid (OLED)", [UI_MENU_COLOR_CLARITY] = "Clarity",
+    [UI_MENU_COLOR_CUSTOM] = "Custom",
+    [UI_MENU_COLOR_BRIGHTNESS] = "Brightness", [UI_MENU_COLOR_BRIGHTNESS_DESC] = "Added to every colour; 0 leaves it.",
+    [UI_MENU_COLOR_CONTRAST] = "Contrast",
+    [UI_MENU_COLOR_CONTRAST_DESC] = "Spreads colours away from mid-grey (above 100 %) or towards it; 100 % leaves them.",
+    [UI_MENU_COLOR_SATURATION] = "Saturation",
+    [UI_MENU_COLOR_SATURATION_DESC] = "Colour strength against grey; 100 % leaves it.",
+    [UI_MENU_COLOR_GAMMA] = "Gamma",
+    [UI_MENU_COLOR_GAMMA_DESC] = "Below 1 brightens dark and middle tones, above 1 darkens them; 1 leaves them.",
+    [UI_MENU_HDR_GROUP] = "HDR",
+    [UI_MENU_HDR] = "HDR output",
+    [UI_MENU_HDR_DESC] = "Bright highlights on an HDR display. Needs HDR turned on in Windows (\"Use HDR\") or in a "
+                         "Wayland compositor with colour management; without it the picture stays SDR. Applies after a "
+                         "restart. The colour profile above is for SDR and is not used in HDR.",
+    [UI_MENU_HDR_PEAK] = "Peak brightness",
+    [UI_MENU_HDR_PEAK_DESC] = "Your display's peak in nits; the brightest highlights stop there.",
+    [UI_MENU_HDR_GAME] = "Game brightness",
+    [UI_MENU_HDR_GAME_DESC] = "Nits of the picture's white (paper white). 203 is the HDR reference; raise it in a "
+                              "bright room.",
+    [UI_MENU_HDR_UI] = "HUD and menu brightness",
+    [UI_MENU_HDR_UI_DESC] = "Nits of the HUD's and this menu's white.",
 
     [UI_MENU_FPS_LIMIT] = "Frame rate limit",
     [UI_MENU_FPS_LIMIT_DESC] = "The most frames per second the game draws. Above 60 is experimental and needs Game speed "
@@ -180,6 +242,37 @@ static const char *const text_en[UI_TEXT_COUNT] = {
     [UI_PAD_DPAD_DOWN] = "D-pad down", [UI_PAD_ZL] = "Left trigger", [UI_PAD_ZR] = "Right trigger",
     [UI_PAD_CROSS] = "Cross", [UI_PAD_CIRCLE] = "Circle", [UI_PAD_SQUARE] = "Square", [UI_PAD_TRIANGLE] = "Triangle",
 
+    [UI_MENU_AMIIBO_DIR] = "Amiibo folder",
+    [UI_MENU_AMIIBO_OPEN] = "Open",
+    [UI_MENU_AMIIBO_DEFAULT_DIR] = "Default folder",
+    [UI_MENU_AMIIBO_REFRESH] = "Refresh",
+    [UI_MENU_AMIIBO_PICK] = "Amiibo dumps (540-byte .bin or .nfc files):",
+    [UI_MENU_AMIIBO_NO_DIR] = "Cannot open the folder %s",
+    [UI_MENU_AMIIBO_READER] = "NFC reader",
+    [UI_MENU_AMIIBO_STATE] = "Reader:",
+    [UI_MENU_AMIIBO_STATE_IDLE] = "ready",
+    [UI_MENU_AMIIBO_STATE_SEARCHING] = "the game is waiting for an amiibo",
+    [UI_MENU_AMIIBO_STATE_FOUND] = "amiibo on the reader",
+    [UI_MENU_AMIIBO_STATE_MOUNTED] = "the game is reading the amiibo",
+    [UI_MENU_AMIIBO_STATE_OFF] = "off",
+    [UI_MENU_AMIIBO_FILE] = "Selected file:",
+    [UI_MENU_AMIIBO_NO_FILE] = "(no file selected)",
+    [UI_MENU_AMIIBO_TAP] = "Tap the amiibo",
+    [UI_MENU_AMIIBO_REMOVE] = "Lift the amiibo",
+    [UI_MENU_AMIIBO_AUTO_REMOVE] = "Lift the amiibo by itself after a tap",
+    [UI_MENU_AMIIBO_HOLD] = "Time on the reader",
+    [UI_MENU_AMIIBO_SECONDS] = "%.1f s",
+    [UI_MENU_AMIIBO_TAG] = "Amiibo on the reader:",
+    [UI_MENU_AMIIBO_NO_TAG] = "No amiibo on the reader.",
+    [UI_MENU_AMIIBO_TAG_FILE] = "File: %s",
+    [UI_MENU_AMIIBO_TAG_ID] = "Character %s, series %02x, number %04x, type %02x",
+    [UI_MENU_AMIIBO_TAG_UID] = "UID: %s",
+    [UI_MENU_AMIIBO_READY] = "Ready",
+    [UI_MENU_AMIIBO_TAPPED] = "Tapped: %s",
+    [UI_MENU_AMIIBO_LOAD_FAILED] = "Not an amiibo dump (540-byte NTAG215): %s",
+    [UI_MENU_AMIIBO_REMOVED] = "Amiibo lifted",
+    [UI_MENU_AMIIBO_STATUS] = "Status: %s",
+
     [UI_MENU_MENU_LANG] = "Menu language", [UI_MENU_MENU_LANG_DESC] = "Language of this menu and the overlay.",
     [UI_MENU_MENU_LANG_AUTO] = "Automatic (from Windows)",
 
@@ -280,7 +373,8 @@ static const char *const text_ru[UI_TEXT_COUNT] = {
 
     [UI_MENU_TITLE] = "Настройки",
     [UI_MENU_TAB_SCREEN] = "Экран", [UI_MENU_TAB_GAME] = "Игра", [UI_MENU_TAB_MODS] = "Моды", [UI_MENU_TAB_CHEATS] = "Читы",
-    [UI_MENU_TAB_SOUND] = "Звук", [UI_MENU_TAB_CONTROLS] = "Управление", [UI_MENU_TAB_MENU] = "Меню", [UI_MENU_TAB_ADVANCED] = "Дополнительно",
+    [UI_MENU_TAB_SOUND] = "Звук", [UI_MENU_TAB_CONTROLS] = "Управление", [UI_MENU_TAB_AMIIBO] = "Amiibo",
+    [UI_MENU_TAB_MENU] = "Меню", [UI_MENU_TAB_ADVANCED] = "Дополнительно",
     [UI_MENU_CONTINUE] = "Продолжить", [UI_MENU_QUIT] = "Выйти из игры",
     [UI_MENU_ON] = "Вкл.", [UI_MENU_OFF] = "Выкл.", [UI_MENU_AUTO] = "Автоматически",
     [UI_MENU_DEFAULT_MARK] = "по умолчанию",
@@ -311,12 +405,74 @@ static const char *const text_ru[UI_TEXT_COUNT] = {
     [UI_MENU_RENDER_SCALE_DESC] = "Размер 3D-сцены относительно разрешения игры; FSR игры доводит её до этого размера. "
                                   "Выше 100 % сглаживает лесенки на краях (суперсэмплинг) ценой большой нагрузки на GPU.",
     [UI_MENU_RENDER_SCALE_GAME] = "Как в игре (83 %)",
+    [UI_MENU_SHADOW_RES] = "Размер карты теней",
+    [UI_MENU_SHADOW_RES_DESC] = "Размер карты теней от солнца. Собственный размер игры меняется вместе с видом, у земли до "
+                                "около 400, поэтому тени от листвы выглядят блочными и прыгают; фиксированный размер "
+                                "делает их стабильнее и чётче. Выше 1024 тени требуют больше GPU и видеопамяти; 256 грубее "
+                                "собственного размера игры — для встроенных GPU с нехваткой пропускной способности памяти.",
+    [UI_MENU_SHADOW_RES_GAME] = "Как в игре (меняется)",
+    [UI_MENU_SHADOW_SCALE] = "Разрешение теней",
+    [UI_MENU_SHADOW_SCALE_DESC] = "Рисует карты теней от солнца в столько раз больше с каждой стороны, чем 960×960 игры: "
+                                  "резче края теней и тени от листвы. Действует после перезапуска.",
+    [UI_MENU_SHADOW_RANGE] = "Дальность каскадов теней",
+    [UI_MENU_SHADOW_RANGE_DESC] = "Сдвигает шаги, где тени становятся мягче (20, 40, 80 и 160 м в игре), дальше от игрока. "
+                                  "Растягивает карту теней на большую площадь: поднимайте разрешение теней вместе с этим. "
+                                  "Действует после перезапуска.",
+    [UI_MENU_CONTACT_SHADOWS] = "Контактные тени",
+    [UI_MENU_CONTACT_SHADOWS_DESC] = "Мелкие тени от солнца, которых нет на картах теней: у ног, под камнями, в траве и "
+                                     "складках. На экране после освещения. Действует после перезапуска.",
+    [UI_MENU_PCSS] = "Мягкие тени",
+    [UI_MENU_PCSS_DESC] = "Тени от солнца резкие там, где предмет касается земли, и мягче, чем дальше падает тень "
+                          "(PCSS). 0 оставляет фильтр игры. Действует после перезапуска.",
     [UI_MENU_UPSCALER] = "Масштабирование под окно",
     [UI_MENU_UPSCALER_DESC] = "Как картинка растягивается, когда окно больше разрешения игры. FSR сохраняет края и "
                               "детали чётче билинейного.",
     [UI_MENU_UPSCALER_FSR] = "AMD FSR 1", [UI_MENU_UPSCALER_BILINEAR] = "Билинейное",
+    [UI_MENU_ASPECT] = "Форма картинки",
+    [UI_MENU_ASPECT_DESC] = "Сохранить форму игры с чёрными полосами или растянуть её на всё окно.",
+    [UI_MENU_ASPECT_FIT] = "Чёрные полосы", [UI_MENU_ASPECT_STRETCH] = "Растянуть",
+    [UI_MENU_DLAA] = "NVIDIA DLSS / DLAA",
+    [UI_MENU_DLAA_DESC] = "NVIDIA DLSS для 3D-сцены (видеокарты NVIDIA RTX; nvngx_dlss.dll рядом с totk.exe): ровнее края и "
+                          "меньше мерцания. Интерфейс не затрагивается. Режим ниже задаёт разрешение, с которым он работает. "
+                          "Действует после перезапуска.",
+    [UI_MENU_DLSS] = "Режим DLSS",
+    [UI_MENU_DLSS_DESC] = "DLAA рисует 3D-сцену в полном разрешении. «Качество», «Баланс» и «Производительность» рисуют её "
+                          "в 67, 58 и 50 % и масштабируют через DLSS ради большего числа кадров; они заменяют масштаб "
+                          "3D-отрисовки. Действует после перезапуска.",
+    [UI_MENU_DLSS_DLAA] = "DLAA (родное)", [UI_MENU_DLSS_QUALITY] = "Качество", [UI_MENU_DLSS_BALANCED] = "Баланс",
+    [UI_MENU_DLSS_PERFORMANCE] = "Производительность",
+    [UI_MENU_FXAA] = "Сглаживание игры (FXAA)",
+    [UI_MENU_FXAA_DESC] = "FXAA игры слегка размывает мелкие детали; с DLAA оно не требуется.",
     [UI_MENU_SHARPNESS] = "Резкость FSR",
     [UI_MENU_SHARPNESS_DESC] = "Повышение резкости после масштабирования FSR; 0 выключает его.",
+    [UI_MENU_COLOR] = "Цвет",
+    [UI_MENU_COLOR_PRESET] = "Цветовой профиль",
+    [UI_MENU_COLOR_PRESET_DESC] = "Задаёт четыре значения ниже. «Яркий»: больше контраста и насыщенности, тени немного "
+                                  "светлее (для OLED-экранов). «Чёткость»: немного больше контраста, насыщенности и "
+                                  "яркости. Изменение любого значения делает профиль «Своим». Интерфейс игры меняется "
+                                  "вместе с картинкой, это меню — нет.",
+    [UI_MENU_COLOR_DEFAULT] = "Как в игре", [UI_MENU_COLOR_VIVID] = "Яркий (OLED)", [UI_MENU_COLOR_CLARITY] = "Чёткость",
+    [UI_MENU_COLOR_CUSTOM] = "Свой",
+    [UI_MENU_COLOR_BRIGHTNESS] = "Яркость", [UI_MENU_COLOR_BRIGHTNESS_DESC] = "Прибавляется к каждому цвету; 0 — без изменений.",
+    [UI_MENU_COLOR_CONTRAST] = "Контраст",
+    [UI_MENU_COLOR_CONTRAST_DESC] = "Отдаляет цвета от среднего серого (выше 100 %) или приближает к нему; 100 % — без "
+                                    "изменений.",
+    [UI_MENU_COLOR_SATURATION] = "Насыщенность",
+    [UI_MENU_COLOR_SATURATION_DESC] = "Сила цвета относительно серого; 100 % — без изменений.",
+    [UI_MENU_COLOR_GAMMA] = "Гамма",
+    [UI_MENU_COLOR_GAMMA_DESC] = "Ниже 1 осветляет тёмные и средние тона, выше 1 затемняет их; 1 — без изменений.",
+    [UI_MENU_HDR_GROUP] = "HDR",
+    [UI_MENU_HDR] = "Вывод HDR",
+    [UI_MENU_HDR_DESC] = "Яркие блики на HDR-дисплее. Нужен включённый HDR в Windows («Использовать HDR») или "
+                         "Wayland-композитор с управлением цветом; без него картинка остаётся SDR. Применяется после "
+                         "перезапуска. Цветовой профиль выше — для SDR и в HDR не используется.",
+    [UI_MENU_HDR_PEAK] = "Пиковая яркость",
+    [UI_MENU_HDR_PEAK_DESC] = "Пик вашего дисплея в нитах; самые яркие блики останавливаются на нём.",
+    [UI_MENU_HDR_GAME] = "Яркость игры",
+    [UI_MENU_HDR_GAME_DESC] = "Ниты белого цвета картинки (paper white). 203 — эталон HDR; в светлой комнате "
+                              "можно поднять.",
+    [UI_MENU_HDR_UI] = "Яркость интерфейса и меню",
+    [UI_MENU_HDR_UI_DESC] = "Ниты белого цвета интерфейса игры и этого меню.",
 
     [UI_MENU_FPS_LIMIT] = "Ограничение частоты кадров",
     [UI_MENU_FPS_LIMIT_DESC] = "Наибольшее число кадров в секунду. Выше 60 — экспериментальный режим, нужна «Скорость "
@@ -436,6 +592,37 @@ static const char *const text_ru[UI_TEXT_COUNT] = {
     [UI_PAD_ZR] = "Правый курок",
     [UI_PAD_CROSS] = "Крест", [UI_PAD_CIRCLE] = "Круг", [UI_PAD_SQUARE] = "Квадрат", [UI_PAD_TRIANGLE] = "Треугольник",
 
+    [UI_MENU_AMIIBO_DIR] = "Папка amiibo",
+    [UI_MENU_AMIIBO_OPEN] = "Открыть",
+    [UI_MENU_AMIIBO_DEFAULT_DIR] = "Папка по умолчанию",
+    [UI_MENU_AMIIBO_REFRESH] = "Обновить",
+    [UI_MENU_AMIIBO_PICK] = "Дампы amiibo (файлы .bin или .nfc по 540 байт):",
+    [UI_MENU_AMIIBO_NO_DIR] = "Не удаётся открыть папку %s",
+    [UI_MENU_AMIIBO_READER] = "NFC-считыватель",
+    [UI_MENU_AMIIBO_STATE] = "Считыватель:",
+    [UI_MENU_AMIIBO_STATE_IDLE] = "готов",
+    [UI_MENU_AMIIBO_STATE_SEARCHING] = "игра ждёт amiibo",
+    [UI_MENU_AMIIBO_STATE_FOUND] = "amiibo на считывателе",
+    [UI_MENU_AMIIBO_STATE_MOUNTED] = "игра читает amiibo",
+    [UI_MENU_AMIIBO_STATE_OFF] = "выключен",
+    [UI_MENU_AMIIBO_FILE] = "Выбранный файл:",
+    [UI_MENU_AMIIBO_NO_FILE] = "(файл не выбран)",
+    [UI_MENU_AMIIBO_TAP] = "Приложить amiibo",
+    [UI_MENU_AMIIBO_REMOVE] = "Убрать amiibo",
+    [UI_MENU_AMIIBO_AUTO_REMOVE] = "Убирать amiibo само после касания",
+    [UI_MENU_AMIIBO_HOLD] = "Время на считывателе",
+    [UI_MENU_AMIIBO_SECONDS] = "%.1f с",
+    [UI_MENU_AMIIBO_TAG] = "Amiibo на считывателе:",
+    [UI_MENU_AMIIBO_NO_TAG] = "На считывателе нет amiibo.",
+    [UI_MENU_AMIIBO_TAG_FILE] = "Файл: %s",
+    [UI_MENU_AMIIBO_TAG_ID] = "Персонаж %s, серия %02x, номер %04x, тип %02x",
+    [UI_MENU_AMIIBO_TAG_UID] = "UID: %s",
+    [UI_MENU_AMIIBO_READY] = "Готово",
+    [UI_MENU_AMIIBO_TAPPED] = "Приложен: %s",
+    [UI_MENU_AMIIBO_LOAD_FAILED] = "Не дамп amiibo (NTAG215, 540 байт): %s",
+    [UI_MENU_AMIIBO_REMOVED] = "Amiibo убран",
+    [UI_MENU_AMIIBO_STATUS] = "Состояние: %s",
+
     [UI_MENU_MENU_LANG] = "Язык меню", [UI_MENU_MENU_LANG_DESC] = "Язык этого меню и индикатора.",
     [UI_MENU_MENU_LANG_AUTO] = "Автоматически (из Windows)",
 
@@ -537,7 +724,8 @@ static const char *const text_pt[UI_TEXT_COUNT] = {
 
     [UI_MENU_TITLE] = "Configurações",
     [UI_MENU_TAB_SCREEN] = "Tela", [UI_MENU_TAB_GAME] = "Jogo", [UI_MENU_TAB_MODS] = "Mods", [UI_MENU_TAB_CHEATS] = "Cheats",
-    [UI_MENU_TAB_SOUND] = "Som", [UI_MENU_TAB_CONTROLS] = "Controles", [UI_MENU_TAB_MENU] = "Menu", [UI_MENU_TAB_ADVANCED] = "Avançado",
+    [UI_MENU_TAB_SOUND] = "Som", [UI_MENU_TAB_CONTROLS] = "Controles", [UI_MENU_TAB_AMIIBO] = "Amiibo",
+    [UI_MENU_TAB_MENU] = "Menu", [UI_MENU_TAB_ADVANCED] = "Avançado",
     [UI_MENU_CONTINUE] = "Continuar", [UI_MENU_QUIT] = "Sair do jogo",
     [UI_MENU_ON] = "Ligado", [UI_MENU_OFF] = "Desligado", [UI_MENU_AUTO] = "Automático",
     [UI_MENU_DEFAULT_MARK] = "padrão",
@@ -568,12 +756,77 @@ static const char *const text_pt[UI_TEXT_COUNT] = {
     [UI_MENU_RENDER_SCALE_DESC] = "Tamanho da cena 3D em relação à resolução do jogo; o FSR do jogo escala até esse "
                                   "tamanho. Acima de 100 % suaviza serrilhados (supersampling) com alto custo de GPU.",
     [UI_MENU_RENDER_SCALE_GAME] = "Do jogo (83 %)",
+    [UI_MENU_SHADOW_RES] = "Tamanho do mapa de sombras",
+    [UI_MENU_SHADOW_RES_DESC] = "Tamanho do mapa de sombras do sol. O tamanho do jogo muda com a vista, até cerca de "
+                                "400 perto do chão, então sombras de folhas ficam em blocos e pulam; um tamanho fixo "
+                                "as mantém estáveis e mais nítidas. Acima de 1024 as sombras custam mais GPU e memória "
+                                "de vídeo; 256 é mais grosso que o do jogo — para GPUs integradas com pouca largura de banda.",
+    [UI_MENU_SHADOW_RES_GAME] = "Do jogo (varia)",
+    [UI_MENU_SHADOW_SCALE] = "Resolução das sombras",
+    [UI_MENU_SHADOW_SCALE_DESC] = "Desenha os mapas de sombra do sol tantas vezes maiores em cada lado que os 960×960 do "
+                                  "jogo: bordas de sombra e folhas mais nítidas. Vale no próximo início.",
+    [UI_MENU_SHADOW_RANGE] = "Alcance dos cascades de sombra",
+    [UI_MENU_SHADOW_RANGE_DESC] = "Desloca os degraus onde as sombras ficam mais suaves (20, 40, 80 e 160 m do jogo) "
+                                  "para mais longe. Espalha o mapa de sombra por mais terreno: aumente a resolução das "
+                                  "sombras junto. Vale no próximo início.",
+    [UI_MENU_CONTACT_SHADOWS] = "Sombras de contato",
+    [UI_MENU_CONTACT_SHADOWS_DESC] = "Pequenas sombras do sol que os mapas de sombra não pegam: nos pés, sob pedras, "
+                                     "na grama e vincos. Na tela após a iluminação. Vale no próximo início.",
+    [UI_MENU_PCSS] = "Sombras suaves",
+    [UI_MENU_PCSS_DESC] = "Sombras do sol nítidas onde um objeto toca o chão e mais suaves quanto mais longe a sombra "
+                          "cai (PCSS). 0 mantém o filtro do jogo. Vale no próximo início.",
     [UI_MENU_UPSCALER] = "Escala para a janela",
     [UI_MENU_UPSCALER_DESC] = "Como a imagem é ampliada quando a janela é maior que a resolução do jogo. FSR mantém "
                               "bordas e detalhes mais nítidos que bilinear.",
     [UI_MENU_UPSCALER_FSR] = "AMD FSR 1", [UI_MENU_UPSCALER_BILINEAR] = "Bilinear",
+    [UI_MENU_ASPECT] = "Formato da imagem",
+    [UI_MENU_ASPECT_DESC] = "Mantém o formato do jogo com barras pretas ou estica a imagem para preencher a janela.",
+    [UI_MENU_ASPECT_FIT] = "Barras pretas", [UI_MENU_ASPECT_STRETCH] = "Esticar",
+    [UI_MENU_DLAA] = "NVIDIA DLSS / DLAA",
+    [UI_MENU_DLAA_DESC] = "NVIDIA DLSS para a cena 3D (placas NVIDIA RTX; nvngx_dlss.dll ao lado do totk.exe): bordas "
+                          "mais suaves e menos cintilação. O HUD não é afetado. O modo abaixo define a resolução de "
+                          "onde ele parte. Vale após reiniciar.",
+    [UI_MENU_DLSS] = "Modo do DLSS",
+    [UI_MENU_DLSS_DESC] = "DLAA desenha a cena 3D na resolução cheia. Qualidade, Equilibrado e Desempenho a desenham "
+                          "em 67, 58 e 50 % e deixam o DLSS ampliá-la, para mais quadros por segundo; eles substituem "
+                          "a escala 3D. Vale após reiniciar.",
+    [UI_MENU_DLSS_DLAA] = "DLAA (nativo)",
+    [UI_MENU_DLSS_QUALITY] = "Qualidade",
+    [UI_MENU_DLSS_BALANCED] = "Equilibrado",
+    [UI_MENU_DLSS_PERFORMANCE] = "Desempenho",
+    [UI_MENU_FXAA] = "Antisserrilhado do jogo (FXAA)",
+    [UI_MENU_FXAA_DESC] = "O FXAA do jogo borra um pouco os detalhes; não é necessário com DLAA.",
     [UI_MENU_SHARPNESS] = "Nitidez FSR",
     [UI_MENU_SHARPNESS_DESC] = "Nitidez após a escala FSR; 0 desliga.",
+    [UI_MENU_COLOR] = "Cor",
+    [UI_MENU_COLOR_PRESET] = "Perfil de cor",
+    [UI_MENU_COLOR_PRESET_DESC] = "Define os quatro valores abaixo. Vívido: mais contraste e saturação, sombras um "
+                                  "pouco mais claras (feito para telas OLED). Clareza: um pouco mais de contraste, "
+                                  "saturação e brilho. Alterar um valor torna o perfil Personalizado. A interface do "
+                                  "jogo muda com a imagem; este menu não.",
+    [UI_MENU_COLOR_DEFAULT] = "Do jogo", [UI_MENU_COLOR_VIVID] = "Vívido (OLED)",
+    [UI_MENU_COLOR_CLARITY] = "Clareza", [UI_MENU_COLOR_CUSTOM] = "Personalizado",
+    [UI_MENU_COLOR_BRIGHTNESS] = "Brilho",
+    [UI_MENU_COLOR_BRIGHTNESS_DESC] = "Somado a todas as cores; 0 não muda nada.",
+    [UI_MENU_COLOR_CONTRAST] = "Contraste",
+    [UI_MENU_COLOR_CONTRAST_DESC] = "Afasta as cores do cinza médio (acima de 100 %) ou as aproxima dele; 100 % não "
+                                    "muda nada.",
+    [UI_MENU_COLOR_SATURATION] = "Saturação",
+    [UI_MENU_COLOR_SATURATION_DESC] = "Força da cor em relação ao cinza; 100 % não muda nada.",
+    [UI_MENU_COLOR_GAMMA] = "Gama",
+    [UI_MENU_COLOR_GAMMA_DESC] = "Abaixo de 1 clareia os tons escuros e médios, acima de 1 os escurece; 1 não muda nada.",
+    [UI_MENU_HDR_GROUP] = "HDR",
+    [UI_MENU_HDR] = "Saída HDR",
+    [UI_MENU_HDR_DESC] = "Realces brilhantes em uma tela HDR. Precisa do HDR ligado no Windows (\"Usar HDR\") ou num "
+                         "compositor Wayland com gerenciamento de cor; sem isso a imagem continua SDR. Vale após "
+                         "reiniciar. O perfil de cor acima é para SDR e não é usado em HDR.",
+    [UI_MENU_HDR_PEAK] = "Brilho máximo",
+    [UI_MENU_HDR_PEAK_DESC] = "O pico da sua tela em nits; os realces mais claros param aí.",
+    [UI_MENU_HDR_GAME] = "Brilho do jogo",
+    [UI_MENU_HDR_GAME_DESC] = "Nits do branco da imagem (branco de papel). 203 é a referência de HDR; aumente num "
+                              "ambiente claro.",
+    [UI_MENU_HDR_UI] = "Brilho do HUD e do menu",
+    [UI_MENU_HDR_UI_DESC] = "Nits do branco do HUD e deste menu.",
 
     [UI_MENU_FPS_LIMIT] = "Limite de taxa de quadros",
     [UI_MENU_FPS_LIMIT_DESC] = "O máximo de quadros por segundo que o jogo desenha. Acima de 60 é experimental e "
@@ -690,6 +943,37 @@ static const char *const text_pt[UI_TEXT_COUNT] = {
     [UI_PAD_DPAD_LEFT] = "D-pad esquerda", [UI_PAD_DPAD_UP] = "D-pad cima", [UI_PAD_DPAD_RIGHT] = "D-pad direita",
     [UI_PAD_DPAD_DOWN] = "D-pad baixo", [UI_PAD_ZL] = "Gatilho esquerdo", [UI_PAD_ZR] = "Gatilho direito",
     [UI_PAD_CROSS] = "Cruz", [UI_PAD_CIRCLE] = "Círculo", [UI_PAD_SQUARE] = "Quadrado", [UI_PAD_TRIANGLE] = "Triângulo",
+
+    [UI_MENU_AMIIBO_DIR] = "Pasta de amiibo",
+    [UI_MENU_AMIIBO_OPEN] = "Abrir",
+    [UI_MENU_AMIIBO_DEFAULT_DIR] = "Pasta padrão",
+    [UI_MENU_AMIIBO_REFRESH] = "Atualizar",
+    [UI_MENU_AMIIBO_PICK] = "Dumps de amiibo (arquivos .bin ou .nfc de 540 bytes):",
+    [UI_MENU_AMIIBO_NO_DIR] = "Não foi possível abrir a pasta %s",
+    [UI_MENU_AMIIBO_READER] = "Leitor NFC",
+    [UI_MENU_AMIIBO_STATE] = "Leitor:",
+    [UI_MENU_AMIIBO_STATE_IDLE] = "pronto",
+    [UI_MENU_AMIIBO_STATE_SEARCHING] = "o jogo está esperando um amiibo",
+    [UI_MENU_AMIIBO_STATE_FOUND] = "amiibo no leitor",
+    [UI_MENU_AMIIBO_STATE_MOUNTED] = "o jogo está lendo o amiibo",
+    [UI_MENU_AMIIBO_STATE_OFF] = "desligado",
+    [UI_MENU_AMIIBO_FILE] = "Arquivo selecionado:",
+    [UI_MENU_AMIIBO_NO_FILE] = "(nenhum arquivo selecionado)",
+    [UI_MENU_AMIIBO_TAP] = "Encostar o amiibo",
+    [UI_MENU_AMIIBO_REMOVE] = "Afastar o amiibo",
+    [UI_MENU_AMIIBO_AUTO_REMOVE] = "Afastar o amiibo sozinho depois de encostar",
+    [UI_MENU_AMIIBO_HOLD] = "Tempo no leitor",
+    [UI_MENU_AMIIBO_SECONDS] = "%.1f s",
+    [UI_MENU_AMIIBO_TAG] = "Amiibo no leitor:",
+    [UI_MENU_AMIIBO_NO_TAG] = "Nenhum amiibo no leitor.",
+    [UI_MENU_AMIIBO_TAG_FILE] = "Arquivo: %s",
+    [UI_MENU_AMIIBO_TAG_ID] = "Personagem %s, série %02x, número %04x, tipo %02x",
+    [UI_MENU_AMIIBO_TAG_UID] = "UID: %s",
+    [UI_MENU_AMIIBO_READY] = "Pronto",
+    [UI_MENU_AMIIBO_TAPPED] = "Encostado: %s",
+    [UI_MENU_AMIIBO_LOAD_FAILED] = "Não é um dump de amiibo (NTAG215, 540 bytes): %s",
+    [UI_MENU_AMIIBO_REMOVED] = "Amiibo afastado",
+    [UI_MENU_AMIIBO_STATUS] = "Estado: %s",
 
     [UI_MENU_MENU_LANG] = "Idioma do menu", [UI_MENU_MENU_LANG_DESC] = "Idioma deste menu e do indicador.",
     [UI_MENU_MENU_LANG_AUTO] = "Automático (do Windows)",

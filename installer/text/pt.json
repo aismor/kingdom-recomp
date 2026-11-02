@@ -27,6 +27,7 @@
  "phase.prepare.seed": "Lendo os shaders dos dados do jogo",
  "phase.prepare.translate": "Traduzindo os shaders",
  "phase.prepare.libraries": "Compilando os shaders para o driver gráfico",
+ "phase.prepare.pack": "Empacotando o cache de shaders em um arquivo",
  "phase.cleanup.ini": "Gravando totk.ini",
  "phase.cleanup.temp": "Removendo arquivos temporários",
 
@@ -76,6 +77,7 @@
  "prepare.shader_list_missing": "A lista de shaders está ausente.",
  "prepare.romfs_patches_failed": "Falha ao gravar os patches de dados do jogo (código de saída {code}). Detalhes: {log}",
  "prepare.shaders_failed": "Falha ao preparar os shaders (código de saída {code}). Detalhes: {log}",
+ "prepare.pack_failed": "Falha ao empacotar o cache de shaders (código de saída {code}). Detalhes: {log}",
  "cleanup.ini_failed": "Não foi possível gravar totk.ini: {detail}",
 
  "warn.lang_needs_fonts": "Texto em {lang} precisa das fontes do sistema do Switch, que o instalador não extrai; parte do texto pode não aparecer.",

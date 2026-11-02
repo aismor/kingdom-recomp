@@ -660,6 +660,7 @@ class Compile(Step):
 # ---- 5. prepare
 
 TRANSLATED = re.compile(r'gfx_shader: prepare: (\d+) of (\d+) pairs')
+ASPECT_SIZES = ('2560x1080', '3440x1440', '3840x1600', '5120x2160')
 
 
 class Prepare(Step):
@@ -668,8 +669,9 @@ class Prepare(Step):
     def key(self, ctx):
         layout = ctx.layout
         xlate_id = layout.xlate.with_suffix('.id')
-        tools = [layout.tools / n for n in ('prepare_shaders.py', 'shader_census.py', 'make_romfs_patches.py')]
-        return fingerprint('prepare-1', ctx.keys['compile'], layout.xlate, xlate_id, shader_list_text(layout), *tools)
+        tools = [layout.tools / n for n in ('prepare_shaders.py', 'shader_census.py', 'make_romfs_patches.py',
+                                            'pack_shader_cache.py', 'ultrawide_layout.py')]
+        return fingerprint('prepare-3', ctx.keys['compile'], layout.xlate, xlate_id, shader_list_text(layout), *tools)
 
     @staticmethod
     def done_file():
@@ -680,7 +682,9 @@ class Prepare(Step):
     def current(self, ctx, record):
         dest = ctx.dest
         xlate = dest / ctx.layout.xlate.name
-        return ((dest / self.done_file()).is_file() and (dest / 'romfs-patches' / 'manifest.tsv').is_file()
+        aspect_ok = game_version(ctx) != '1.4.3' or all((dest / f'romfs-patches-{s}' / 'manifest.tsv').is_file()
+                                                        for s in ASPECT_SIZES)
+        return ((dest / self.done_file()).is_file() and (dest / 'romfs-patches' / 'manifest.tsv').is_file() and aspect_ok
                 and xlate.is_file() and file_sha256(xlate) == record.get('xlate_sha256'))
 
     def run(self, ctx):
@@ -704,6 +708,14 @@ class Prepare(Step):
                               dest / 'romfs-patches'])
         if code:
             raise InstallError('prepare.romfs_patches_failed', code=code, log=str(log))
+        if game_version(ctx) == '1.4.3':
+            for size in ASPECT_SIZES:
+                out = dest / f'romfs-patches-{size}'
+                remove(out)
+                code, log = run_tool(ctx, 'prepare', layout.tools / 'make_romfs_patches.py',
+                                     ['--version', 'v143', '--romfs', dest / 'romfs', '--out', out, '--aspect', size])
+                if code:
+                    raise InstallError('prepare.romfs_patches_failed', code=code, log=str(log))
 
         shader_list = layout.shader_list
         if not shader_list:
@@ -730,6 +742,13 @@ class Prepare(Step):
             remove(dest / 'shader-prepared.bin')   # older than these seeds: the host translates them again
             with open(pending, 'a', encoding='utf-8') as f:
                 f.write(f'{dest}\n')
+        else:
+            # One shader-cache.pack instead of four files per shader. The Linux launcher does this after its host-side
+            # GPU preparation instead, because the container only writes the seed files here.
+            rep.progress('prepare', 'pack', force=True)
+            code, log = run_tool(ctx, 'prepare', layout.tools / 'pack_shader_cache.py', [dest / 'shader-cache'])
+            if code:
+                raise InstallError('prepare.pack_failed', code=code, log=str(log))
         return {'xlate_sha256': file_sha256(xlate)}
 
 

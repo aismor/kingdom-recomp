@@ -143,6 +143,12 @@ int probe_cfg(void) {
     CHECK(m && EQ(m->def, "130") && EQ(m->values, "0..300"), "meta: rumble strength 130 in 0..300");
     m = cfg_meta("PERF_OVERLAY");
     CHECK(m && EQ(m->def, "off") && EQ(m->values, "off|fps|full") && m->live, "meta: perf_overlay is live, off by default");
+    m = cfg_meta("COLOR_PRESET");
+    CHECK(m && EQ(m->def, "default") && EQ(m->values, "default|vivid|clarity|custom") && m->live,
+          "meta: colour profiles are live and use the game's picture by default");
+    m = cfg_meta("COLOR_GAMMA");
+    CHECK(m && EQ(m->def, "1") && EQ(m->values, "0.8..1.2") && m->live,
+          "meta: colour gamma is live and unchanged by default");
     m = cfg_meta("MENU_LANG");
     CHECK(m && EQ(m->def, "") && EQ(m->values, "en|ru|pt") && m->live,
           "meta: menu language offers automatic, English, Russian and Portuguese");
