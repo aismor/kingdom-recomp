@@ -111,6 +111,21 @@
 # 3D render scale: the scene's size relative to the game resolution, game (5/6, the game's own 1600x900 at 1080p) or
 # a percentage (25 to 400, at most 4096 pixels a side); above 100 supersamples the scene (anti-aliasing). Read at start.
 # render_scale = game
+# Sun shadow map size: game (the engine sizes it with the view, down to about 400 near the ground) or a fixed width and
+# height in pixels, 256 to 4096 in steps of 8. A fixed size keeps leaf shadows from jumping when the size changes.
+# Read at start.
+# shadow_res = game
+# Sun shadow map resolution multiplier (1 to 4): draws each cascade map this many times larger on each side than the
+# game's 960x960. Read at start.
+# shadow_scale = 1
+# Sun shadow cascade range in percent of the game's (its cascades end at 20, 40, 80 and 160 m), 50 to 400: higher moves
+# the steps where shadows turn softer further away. Read at start.
+# shadow_range = 100
+# Screen-space contact shadows, strength in percent (0 = off): small shadows at feet and in grass the shadow maps miss.
+# Read at start.
+# contact_shadows = 0
+# Soft sun shadows (PCSS), percent of the default penumbra width (0 to 200; 0 = the game's filter). Read at start.
+# pcss = 0
 # Scaling to the window when it is larger than the game resolution: fsr (AMD FSR 1) or bilinear, and FSR's sharpening
 # from 0 (off) to 100. Changes while the game runs take effect at once.
 # upscaler = fsr

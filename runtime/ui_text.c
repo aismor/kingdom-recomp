@@ -58,6 +58,25 @@ static const char *const text_en[UI_TEXT_COUNT] = {
     [UI_MENU_RENDER_SCALE_DESC] = "Size of the 3D scene relative to the game resolution; the game's FSR scales it to "
                                   "that size. Above 100 % smooths jagged edges (supersampling) at a high GPU cost.",
     [UI_MENU_RENDER_SCALE_GAME] = "Game (83 %)",
+    [UI_MENU_SHADOW_RES] = "Shadow map size",
+    [UI_MENU_SHADOW_RES_DESC] = "Size of the sun's shadow map. The game's own size changes with the view, down to about 400 "
+                                "near the ground, so leaf shadows look blocky and jump; a fixed size keeps them still and "
+                                "sharper. Above 1024 the shadows cost more GPU time and video memory; 256 is coarser than the "
+                                "game's own and is for integrated GPUs short of memory bandwidth.",
+    [UI_MENU_SHADOW_RES_GAME] = "Game (changes)",
+    [UI_MENU_SHADOW_SCALE] = "Shadow resolution",
+    [UI_MENU_SHADOW_SCALE_DESC] = "Draws the sun's shadow maps this many times larger on each side than the game's 960x960: "
+                                  "sharper shadow edges and leaf shadows. Takes effect at the next start.",
+    [UI_MENU_SHADOW_RANGE] = "Shadow cascade range",
+    [UI_MENU_SHADOW_RANGE_DESC] = "Moves the steps where shadows turn softer (the game's 20, 40, 80 and 160 m) further "
+                                  "away. Spreads the shadow map over more ground: raise Shadow resolution with it. "
+                                  "Takes effect at the next start.",
+    [UI_MENU_CONTACT_SHADOWS] = "Contact shadows",
+    [UI_MENU_CONTACT_SHADOWS_DESC] = "Small sun shadows the shadow maps miss: at feet, under stones, in grass and creases. "
+                                     "Traced on the screen after lighting. Takes effect at the next start.",
+    [UI_MENU_PCSS] = "Soft shadows",
+    [UI_MENU_PCSS_DESC] = "Sun shadows sharp where an object meets the ground and softer the further the shadow falls "
+                          "(PCSS). 0 keeps the game's filter. Takes effect at the next start.",
     [UI_MENU_UPSCALER] = "Scaling to the window",
     [UI_MENU_UPSCALER_DESC] = "How the picture is scaled when the window is larger than the game resolution. FSR keeps "
                               "edges and detail sharper than bilinear.",
@@ -353,6 +372,25 @@ static const char *const text_ru[UI_TEXT_COUNT] = {
     [UI_MENU_RENDER_SCALE_DESC] = "Размер 3D-сцены относительно разрешения игры; FSR игры доводит её до этого размера. "
                                   "Выше 100 % сглаживает лесенки на краях (суперсэмплинг) ценой большой нагрузки на GPU.",
     [UI_MENU_RENDER_SCALE_GAME] = "Как в игре (83 %)",
+    [UI_MENU_SHADOW_RES] = "Размер карты теней",
+    [UI_MENU_SHADOW_RES_DESC] = "Размер карты теней от солнца. Собственный размер игры меняется вместе с видом, у земли до "
+                                "около 400, поэтому тени от листвы выглядят блочными и прыгают; фиксированный размер "
+                                "делает их стабильнее и чётче. Выше 1024 тени требуют больше GPU и видеопамяти; 256 грубее "
+                                "собственного размера игры — для встроенных GPU с нехваткой пропускной способности памяти.",
+    [UI_MENU_SHADOW_RES_GAME] = "Как в игре (меняется)",
+    [UI_MENU_SHADOW_SCALE] = "Разрешение теней",
+    [UI_MENU_SHADOW_SCALE_DESC] = "Рисует карты теней от солнца в столько раз больше с каждой стороны, чем 960×960 игры: "
+                                  "резче края теней и тени от листвы. Действует после перезапуска.",
+    [UI_MENU_SHADOW_RANGE] = "Дальность каскадов теней",
+    [UI_MENU_SHADOW_RANGE_DESC] = "Сдвигает шаги, где тени становятся мягче (20, 40, 80 и 160 м в игре), дальше от игрока. "
+                                  "Растягивает карту теней на большую площадь: поднимайте разрешение теней вместе с этим. "
+                                  "Действует после перезапуска.",
+    [UI_MENU_CONTACT_SHADOWS] = "Контактные тени",
+    [UI_MENU_CONTACT_SHADOWS_DESC] = "Мелкие тени от солнца, которых нет на картах теней: у ног, под камнями, в траве и "
+                                     "складках. На экране после освещения. Действует после перезапуска.",
+    [UI_MENU_PCSS] = "Мягкие тени",
+    [UI_MENU_PCSS_DESC] = "Тени от солнца резкие там, где предмет касается земли, и мягче, чем дальше падает тень "
+                          "(PCSS). 0 оставляет фильтр игры. Действует после перезапуска.",
     [UI_MENU_UPSCALER] = "Масштабирование под окно",
     [UI_MENU_UPSCALER_DESC] = "Как картинка растягивается, когда окно больше разрешения игры. FSR сохраняет края и "
                               "детали чётче билинейного.",
@@ -653,6 +691,25 @@ static const char *const text_pt[UI_TEXT_COUNT] = {
     [UI_MENU_RENDER_SCALE_DESC] = "Tamanho da cena 3D em relação à resolução do jogo; o FSR do jogo escala até esse "
                                   "tamanho. Acima de 100 % suaviza serrilhados (supersampling) com alto custo de GPU.",
     [UI_MENU_RENDER_SCALE_GAME] = "Do jogo (83 %)",
+    [UI_MENU_SHADOW_RES] = "Tamanho do mapa de sombras",
+    [UI_MENU_SHADOW_RES_DESC] = "Tamanho do mapa de sombras do sol. O tamanho do jogo muda com a vista, até cerca de "
+                                "400 perto do chão, então sombras de folhas ficam em blocos e pulam; um tamanho fixo "
+                                "as mantém estáveis e mais nítidas. Acima de 1024 as sombras custam mais GPU e memória "
+                                "de vídeo; 256 é mais grosso que o do jogo — para GPUs integradas com pouca largura de banda.",
+    [UI_MENU_SHADOW_RES_GAME] = "Do jogo (varia)",
+    [UI_MENU_SHADOW_SCALE] = "Resolução das sombras",
+    [UI_MENU_SHADOW_SCALE_DESC] = "Desenha os mapas de sombra do sol tantas vezes maiores em cada lado que os 960×960 do "
+                                  "jogo: bordas de sombra e folhas mais nítidas. Vale no próximo início.",
+    [UI_MENU_SHADOW_RANGE] = "Alcance dos cascades de sombra",
+    [UI_MENU_SHADOW_RANGE_DESC] = "Desloca os degraus onde as sombras ficam mais suaves (20, 40, 80 e 160 m do jogo) "
+                                  "para mais longe. Espalha o mapa de sombra por mais terreno: aumente a resolução das "
+                                  "sombras junto. Vale no próximo início.",
+    [UI_MENU_CONTACT_SHADOWS] = "Sombras de contato",
+    [UI_MENU_CONTACT_SHADOWS_DESC] = "Pequenas sombras do sol que os mapas de sombra não pegam: nos pés, sob pedras, "
+                                     "na grama e vincos. Na tela após a iluminação. Vale no próximo início.",
+    [UI_MENU_PCSS] = "Sombras suaves",
+    [UI_MENU_PCSS_DESC] = "Sombras do sol nítidas onde um objeto toca o chão e mais suaves quanto mais longe a sombra "
+                          "cai (PCSS). 0 mantém o filtro do jogo. Vale no próximo início.",
     [UI_MENU_UPSCALER] = "Escala para a janela",
     [UI_MENU_UPSCALER_DESC] = "Como a imagem é ampliada quando a janela é maior que a resolução do jogo. FSR mantém "
                               "bordas e detalhes mais nítidos que bilinear.",
