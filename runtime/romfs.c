@@ -692,6 +692,18 @@ static void overlay_init(void) {
     // TOTK_ROMFS_PATCHES unset: romfs-patches next to romfs-index.bin if it has a manifest (tools/make_romfs_patches.py)
     char def[2100];
     const char *patches = cfg_get("TOTK_ROMFS_PATCHES");
+    unsigned out[2];
+    res_wanted(out);
+    if (!patches && (unsigned long long)out[0] * 9 != (unsigned long long)out[1] * 16) {
+        if (snprintf(def, sizeof def, "%s/romfs-patches-%ux%u/manifest.tsv", index_dir, out[0], out[1]) < (int)sizeof def &&
+            GetFileAttributesA(def) != INVALID_FILE_ATTRIBUTES) {
+            def[strlen(def) - strlen("/manifest.tsv")] = 0;
+            patches = def;
+        } else {
+            rt_log("RomFS overlay: no romfs-patches-%ux%u for this game resolution; the UI keeps its 16:9 layout",
+                   out[0], out[1]);
+        }
+    }
     if (!patches && snprintf(def, sizeof def, "%s/romfs-patches/manifest.tsv", index_dir) < (int)sizeof def &&
         GetFileAttributesA(def) != INVALID_FILE_ATTRIBUTES) {
         def[strlen(def) - strlen("/manifest.tsv")] = 0;
