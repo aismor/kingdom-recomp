@@ -100,7 +100,7 @@ def kill_tree(proc):
         proc.kill()
 
 
-def run_tool(ctx, step, script, args, parse=None, cwd=None):
+def run_tool(ctx, step, script, args, parse=None, cwd=None, env=None):
     """Run a tool script with the bundled Python. Its output goes to <temp>/logs/<step>-<script>.log and, line by line,
     to parse(line). Returns (exit code, log path)."""
     logs = ctx.temp / 'logs'
@@ -108,10 +108,12 @@ def run_tool(ctx, step, script, args, parse=None, cwd=None):
     log = logs / f'{step}-{Path(script).stem}.log'
     command = [str(ctx.layout.python), '-c', extract.RUN_SCRIPT, str(script), *map(str, args)]
     ctx.reporter.log('run ' + ' '.join(command[3:]))
-    env = dict(os.environ, PYTHONUNBUFFERED='1', PYTHONIOENCODING='utf-8')
+    run_env = dict(os.environ, PYTHONUNBUFFERED='1', PYTHONIOENCODING='utf-8')
+    if env:
+        run_env.update(env)
     with open(log, 'w', encoding='utf-8', newline='\n') as out:
         proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=cwd or ctx.layout.root,
-                                env=env, text=True, encoding='utf-8', errors='replace', bufsize=1)
+                                env=run_env, text=True, encoding='utf-8', errors='replace', bufsize=1)
         try:
             for line in proc.stdout:
                 out.write(line)

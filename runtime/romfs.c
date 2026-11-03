@@ -26,6 +26,7 @@
 #include "fs.h"
 #include "host.h"
 #include "mods.h"
+#include "platform/platform.h"
 #include "romfs_config.h"
 #include "romfs_path.h"
 
