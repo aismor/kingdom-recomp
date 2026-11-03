@@ -96,6 +96,17 @@ site cloth main 28bc98 9400546a @page:x8 bd400104 1e240842 1e240863 9400546a   #
 # s1 is set again by the fmov two instructions on.
 site bounce main 562a64 bd402920 bd402920 bd403921 1e210800   # ldr s0, [x9, #0x28]; ldr s1, [x9, #0x38]; fmul s0, s0, s1
 
+# Fades (MacNativeGames game_patches_v143.c patch_fade_increment, upstream 3e9e7f67): the distance/LOD mesh fades and
+# the pre-actor fades add trunc(2.1 * ratio) to a counter each frame: 2 at 30 fps, 1 at 60, 0 above about 63.5 fps
+# (ratio below 1 / 2.1), where a fade stops and its object stays translucent or invisible until a slower frame moves
+# it on. Each site floors the increment at 1 without changing the flags: clz is 32 only for 0, so increment += clz
+# >> 5. Each scratch register is overwritten immediately afterwards or is no longer read by the function.
+set fade     TOTK_HIGHFPS_FIX    1
+site fade main 0a7ac4 1e380008 1e380008 5ac0110a 53057d4a 0b0a0108
+site fade main 95dd24 1e380008 1e380008 5ac0110a 53057d4a 0b0a0108
+site fade main 6155e4 1e38000a 1e38000a 5ac0114b 53057d6b 0b0b014a
+site fade main 615660 1e38000a 1e38000a 5ac0114b 53057d6b 0b0b014a
+
 # Output size (upstream game_patches_v143.c patch_output_res; runtime/resolution.c switches the set on). The swapchain
 # size nnMain writes comes from page +48; the display configuration's canvas (+0x10) and active output (+0x508) from
 # page +32, and the configuration goes to page +40. x9 is dead at the publication point.
