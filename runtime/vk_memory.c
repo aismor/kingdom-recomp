@@ -21,6 +21,7 @@
 #include "nvn_api.h"
 #include "nvn_pool_index.h"
 #include "vk.h"
+#include "vk_exec.h"
 
 // Raw performance counter ticks for the tracking cost (no division on the replay's path); qpc_ms converts.
 static uint64_t qpc(void) {
@@ -1745,8 +1746,11 @@ static void defer(int kind, uint64_t handle, VmaAllocation alloc) {
     InitOnceExecuteOnce(&cmd_once, cmd_init, NULL, NULL);
     EnterCriticalSection(&cmd_lock);
     if (ndead == cap_dead) grow((void **)&dead, &cap_dead, sizeof *dead);
-    // The open batch may record into the object: it counts as the newest user.
-    dead[ndead++] = (Dead){kind, handle, alloc, open_active ? open_b.seq : next_seq, tl_noted};
+    // The open upload batch and the Vulkan submission currently being recorded may still name this object. Waiting
+    // only for the last submitted value can destroy it before a recorder-thread submission reaches the GPU.
+    uint64_t timeline = tl_noted, recording = vk_exec_recording_fence();
+    if (recording > timeline) timeline = recording;
+    dead[ndead++] = (Dead){kind, handle, alloc, open_active ? open_b.seq : next_seq, timeline};
     LeaveCriticalSection(&cmd_lock);
 }
 

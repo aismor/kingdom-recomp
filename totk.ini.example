@@ -133,6 +133,9 @@
 # Picture shape when the window differs from the game resolution: fit keeps the shape with black bars; stretch fills
 # the window. Changes while the game runs take effect at once.
 # aspect = fit
+# Keep the game running while its window is not focused. Setting this to 0 can permanently stop a load because only
+# the main guest thread pauses while loader threads and clocks continue. Read at start.
+# assume_focus = 1
 # NVIDIA DLSS / DLAA for the 3D scene, on NVIDIA RTX GPUs with nvngx_dlss.dll (from NVIDIA's DLSS SDK) next to
 # totk.exe; elsewhere the setting does nothing. The HUD is drawn after it and is not touched. Read at start.
 # dlaa = 0

@@ -152,6 +152,9 @@ int probe_cfg(void) {
     m = cfg_meta("MENU_LANG");
     CHECK(m && EQ(m->def, "") && EQ(m->values, "en|ru|pt") && m->live,
           "meta: menu language offers automatic, English, Russian and Portuguese");
+    m = cfg_meta("ASSUME_FOCUS");
+    CHECK(m && EQ(m->def, "1") && EQ(m->values, "0|1") && !m->live,
+          "meta: assume_focus prevents interrupted loads by default and needs a restart");
     CHECK(cfg_meta("BIND_A") == NULL && cfg_meta("FPS_COUNTER") == NULL && cfg_meta("NO_SUCH") == NULL,
           "meta: keys the menu does not show are NULL");
 
