@@ -1436,9 +1436,7 @@ uint32_t kern_main_thread(Cpu **cpu) {
     if (g_main) rt_fatal("kern_main_thread: the main thread already runs on another host thread");
     const RtGuestLayout *L = mem_layout();
     uint64_t stack = L->stack.base + L->stack.size - MAIN_STACK;
-    if (!VirtualAlloc((void *)(uintptr_t)stack, MAIN_STACK, MEM_COMMIT, PAGE_READWRITE))
-        rt_fatal("kernel: commit the main thread stack at %#llx failed (error %lu)", (unsigned long long)stack,
-                 GetLastError());
+    mem_commit(stack, MAIN_STACK, "main thread stack");
     RtThread *t = thr_new(MAIN_PRIO, MAIN_CORE, 7);
     t->started = 1;
     t->is_main = 1;

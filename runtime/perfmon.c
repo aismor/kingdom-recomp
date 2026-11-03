@@ -276,7 +276,7 @@ static struct {
 
 static void machine_clear(PerfStats *s) {
     s->cpu_total_pct = s->cpu_game_pct = s->cpu_temp_c = -1;
-    s->ram_used_mb = s->ram_total_mb = s->ram_game_mb = -1;
+    s->ram_used_mb = s->ram_total_mb = s->ram_game_mb = s->ram_private_mb = s->ram_guest_mb = -1;
     s->gpu_pct = s->gpu_temp_c = s->gpu_power_w = s->gpu_clock_mhz = s->vram_used_mb = s->vram_total_mb = -1;
 }
 
@@ -285,6 +285,7 @@ static void machine_copy(PerfStats *d, const PerfStats *s) {
     memcpy(d->gpu_name, s->gpu_name, sizeof d->gpu_name);
     d->cpu_total_pct = s->cpu_total_pct, d->cpu_game_pct = s->cpu_game_pct, d->cpu_temp_c = s->cpu_temp_c;
     d->ram_used_mb = s->ram_used_mb, d->ram_total_mb = s->ram_total_mb, d->ram_game_mb = s->ram_game_mb;
+    d->ram_private_mb = s->ram_private_mb, d->ram_guest_mb = s->ram_guest_mb;
     d->gpu_pct = s->gpu_pct, d->gpu_temp_c = s->gpu_temp_c, d->gpu_power_w = s->gpu_power_w;
     d->gpu_clock_mhz = s->gpu_clock_mhz, d->vram_used_mb = s->vram_used_mb, d->vram_total_mb = s->vram_total_mb;
 }
@@ -310,7 +311,8 @@ static void sampler(void *arg) {
         plat_mutex_unlock(&g_lock);
         machine_clear(&s);
         plat_cpu_load(l, &s.cpu_total_pct, &s.cpu_game_pct, &s.cpu_temp_c);
-        plat_mem_info(&s.ram_used_mb, &s.ram_total_mb, &s.ram_game_mb);
+        plat_mem_info(&s.ram_used_mb, &s.ram_total_mb, &s.ram_game_mb, &s.ram_private_mb);
+        s.ram_guest_mb = (float)(mem_committed_bytes() / 1048576.0);
         plat_gpu_load(l, &s.gpu_pct, &s.vram_used_mb);
         s.vram_total_mb = vram_total;
         nvml_sample(&s);

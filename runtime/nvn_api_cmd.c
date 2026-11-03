@@ -75,8 +75,63 @@ static void put_hdr(uint8_t *p, uint32_t op, uint32_t size) {
     memcpy(p, &h, sizeof h);
 }
 
+// TotK 1.4.3 initializes and finalizes command buffers thousands of times during loading and several times per frame.
+// Keep the largest finalized recording blocks in a small pool so the next recordings do not repeatedly grow through
+// several reallocations and copies. Very large one-off recordings return directly to the heap.
+#define RECORD_POOL_SLOTS 16
+#define RECORD_POOL_MAX_BYTES ((size_t)4 << 20)
+static SRWLOCK record_pool_lock = SRWLOCK_INIT;
+static struct { uint8_t *p; size_t size; } record_pool[RECORD_POOL_SLOTS];
+static uint32_t record_pool_count;
+
+static uint8_t *record_pool_take(size_t *size) {
+    uint8_t *p = NULL;
+    AcquireSRWLockExclusive(&record_pool_lock);
+    if (record_pool_count) {
+        uint32_t best = 0;
+        for (uint32_t i = 1; i < record_pool_count; i++)
+            if (record_pool[i].size > record_pool[best].size) best = i;
+        p = record_pool[best].p;
+        *size = record_pool[best].size;
+        record_pool[best] = record_pool[--record_pool_count];
+    }
+    ReleaseSRWLockExclusive(&record_pool_lock);
+    return p;
+}
+
+static void record_pool_put(uint8_t *p, size_t size) {
+    if (!p) return;
+    if (size <= RECORD_POOL_MAX_BYTES) {
+        AcquireSRWLockExclusive(&record_pool_lock);
+        if (record_pool_count < RECORD_POOL_SLOTS) {
+            record_pool[record_pool_count++] = (typeof(*record_pool)){p, size};
+            p = NULL;
+        } else {
+            uint32_t smallest = 0;
+            for (uint32_t i = 1; i < record_pool_count; i++)
+                if (record_pool[i].size < record_pool[smallest].size) smallest = i;
+            if (record_pool[smallest].size < size) {
+                uint8_t *drop = record_pool[smallest].p;
+                record_pool[smallest] = (typeof(*record_pool)){p, size};
+                p = drop;
+            }
+        }
+        ReleaseSRWLockExclusive(&record_pool_lock);
+    }
+    free(p);
+}
+
 static void cmd_reserve(cmd_t *o, size_t need) {
     if (o->seg && o->cur + need + OP_RESERVE <= o->end) return;
+    if (!o->seg) {
+        size_t size = 0;
+        uint8_t *p = record_pool_take(&size);
+        if (p) {
+            o->seg = o->cur = p;
+            o->end = p + size;
+            if (need + OP_RESERVE <= size) return;
+        }
+    }
     size_t used = o->seg ? (size_t)(o->cur - o->seg) : 0;
     size_t cap = o->seg ? (size_t)(o->end - o->seg) : 0;
     if (!cap) cap = 64 << 10;
@@ -323,7 +378,8 @@ NVN_API(nvnCommandBufferInitialize) {
 // void nvnCommandBufferFinalize(NVNcommandBuffer *cmd): handles outlive their recorder
 NVN_API(nvnCommandBufferFinalize) {
     cmd_t *o = cmd_of(c);
-    free(o->seg);
+    size_t size = o->seg ? (size_t)(o->end - o->seg) : 0;
+    record_pool_put(o->seg, size);
     o->seg = o->cur = o->end = NULL;
     o->magic = 0;
     cb_set_disabled(o, CB_NO_COMMAND | CB_NO_CONTROL, 0);

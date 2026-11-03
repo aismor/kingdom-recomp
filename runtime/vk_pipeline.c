@@ -2547,6 +2547,12 @@ static Layout *compute_layout(const GfxShader *cs, Bindings *B, const char **why
     return l;
 }
 
+// The pipeline table hashes and compares every byte of a key. Keep the compute marker 64-bit so the key has no tail
+// padding whose indeterminate bytes could make repeated lookups of the same shader miss.
+typedef struct { const GfxShader *cs; uint64_t compute; } ComputeKey;
+_Static_assert(sizeof(ComputeKey) == sizeof(const GfxShader *) + sizeof(uint64_t), "ComputeKey has padding");
+static ComputeKey compute_key(const GfxShader *cs) { return (ComputeKey){cs, 1}; }
+
 // ---- stage library prebuild
 // Two places build what a draw would otherwise build while the game waits:
 // - totk.exe --prepare-shaders (lb_warm_prepared), after the translation, on every core: for each prepared variant
@@ -2589,7 +2595,7 @@ static struct {
 VkPipeline vk_pipeline_compute(const GfxShader *cs, const VkPipeInfo **info) {
     if (info) *info = NULL;
     if (!cs || !ensure_init()) return VK_NULL_HANDLE;
-    struct { const GfxShader *cs; uint32_t compute; } k = {cs, 1};
+    ComputeKey k = compute_key(cs);
     uint64_t h = key_hash(&k, sizeof k);
     AcquireSRWLockExclusive(&P.lock);
     Pipe *p = pipe_find(&k, sizeof k, h);
@@ -2657,7 +2663,7 @@ static uint32_t vs_union_peek(const GfxShader *vs, GfxShaderIo fin[32]) {
 }
 
 static void lb_compute(const GfxShader *cs) {
-    struct { const GfxShader *cs; uint32_t compute; } k = {cs, 1};
+    ComputeKey k = compute_key(cs);
     uint64_t h = key_hash(&k, sizeof k);
     Bindings B = {0};
     const char *why = NULL;
@@ -3361,8 +3367,12 @@ int vk_pipeline_selftest(void) {
         VkPipeline p = vk_pipeline_compute(s, &info);
         if (!p) continue;
         cbuilt++;
+        VkPipeStats hit0, hit1;
+        vk_pipeline_stats(&hit0);
         const VkPipeInfo *again;
         if (vk_pipeline_compute(s, &again) != p || again != info) cached = 0;
+        vk_pipeline_stats(&hit1);
+        if (hit1.hits != hit0.hits + 1) cached = 0;
     }
     vk_pipeline_save();
     VkPipeStats st;
