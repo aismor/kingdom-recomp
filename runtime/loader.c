@@ -293,9 +293,7 @@ static void load_module(Mod *m, const char *dir, const RtLayoutEntry *lay) {
     if (size != lay->size)
         rt_fatal("loader: %s image is %#llx bytes, layout.h says %#llx: generated C and game files differ", lay->name,
                  (unsigned long long)size, (unsigned long long)lay->size);
-    if (!VirtualAlloc((void *)(uintptr_t)lay->base, size, MEM_COMMIT, PAGE_READWRITE))
-        rt_fatal("loader: cannot commit %s at %#llx (error %lu)", lay->name, (unsigned long long)lay->base,
-                 GetLastError());
+    mem_commit(lay->base, size, lay->name);
     for (int i = 0; i < 3; i++) {
         if ((uint64_t)seg[i].mem_off + seg[i].size > size) rt_fatal("loader: %s segment %d exceeds the image", lay->name, i);
         nso_segment(raw, &seg[i], (uint8_t *)(uintptr_t)(lay->base + seg[i].mem_off), lay->name, i);

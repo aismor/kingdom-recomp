@@ -50,6 +50,7 @@ static RtGuestLayout L;
 static uint64_t mods_lo, mods_hi;   // fixed module window
 static SRWLOCK lock = SRWLOCK_INIT;
 static uint64_t heap_size, alias_bytes;
+static volatile LONG64 committed_bytes;
 static uint8_t *alias_pages;        // 1 per mapped 4 KiB page of the alias region
 typedef struct { uint64_t dst, src, size; } StackMap;
 static StackMap stack_maps[MAX_STACK_MAPS];
@@ -198,7 +199,7 @@ static LONG CALLBACK thaw_handler(EXCEPTION_POINTERS *ep) {
 }
 
 // Mapping changes thaw the regions they touch and run under frz_lock, so no freeze sees them half done.
-static void commit(uint64_t a, uint64_t n, const char *what) {
+void mem_commit(uint64_t a, uint64_t n, const char *what) {
     AcquireSRWLockExclusive(&frz_lock);
     thaw_range_locked(a, n, 3);
     int ok = !n || VirtualAlloc((void *)(uintptr_t)a, n, MEM_COMMIT, PAGE_READWRITE);
@@ -206,6 +207,7 @@ static void commit(uint64_t a, uint64_t n, const char *what) {
     if (!ok)
         rt_fatal("memory: commit %s %#llx+%#llx failed (error %lu)", what, (unsigned long long)a,
                  (unsigned long long)n, GetLastError());
+    InterlockedAdd64(&committed_bytes, (LONG64)n);
 }
 
 static void decommit(uint64_t a, uint64_t n, const char *what) {
@@ -216,6 +218,7 @@ static void decommit(uint64_t a, uint64_t n, const char *what) {
     if (!ok)
         rt_fatal("memory: decommit %s %#llx+%#llx failed (error %lu)", what, (unsigned long long)a,
                  (unsigned long long)n, GetLastError());
+    InterlockedAdd64(&committed_bytes, -(LONG64)n);
 }
 
 static void protect(uint64_t a, uint64_t n, DWORD prot, const char *what) {
@@ -293,6 +296,8 @@ void mem_init(void) {
 
 const RtGuestLayout *mem_layout(void) { return &L; }
 
+uint64_t mem_committed_bytes(void) { return (uint64_t)InterlockedCompareExchange64(&committed_bytes, 0, 0); }
+
 // Adapted from LAS Recomp runtime/platform/windows.c:40-63 @ da35b83 (MIT, Copyright (c) 2026 Peiikai): GetWriteWatch
 // with the reset flag. A range inside one watched reservation (stack and heap block, or alias region) only.
 static uint64_t written_pages(uint64_t addr, uint64_t size, uint64_t *pages, uint64_t max, DWORD flags) {
@@ -329,7 +334,7 @@ uint32_t mem_set_heap_size(uint64_t size, uint64_t *addr) {
         ReleaseSRWLockExclusive(&lock);
         return R_INVALID_STATE;
     }
-    if (size > heap_size) commit(L.heap.base + heap_size, size - heap_size, "heap");
+    if (size > heap_size) mem_commit(L.heap.base + heap_size, size - heap_size, "heap");
     if (size < heap_size) decommit(L.heap.base + size, heap_size - size, "heap");
     heap_size = size;
     ReleaseSRWLockExclusive(&lock);
@@ -453,7 +458,7 @@ static uint32_t stack_move(int unmap, uint64_t dst, uint64_t src, uint64_t n) {
                 r = R_INVALID_REGION;
                 goto out;
             }
-        commit(dst, n, "moved stack");
+        mem_commit(dst, n, "moved stack");
         memcpy((void *)(uintptr_t)dst, (const void *)(uintptr_t)src, n);
         protect(src, n, PAGE_NOACCESS, "moved stack source");
         stack_maps[nstack_maps++] = (StackMap){dst, src, n};
@@ -475,7 +480,7 @@ static void alias_runs(uint64_t first, uint64_t count, uint8_t want, int do_comm
         uint64_t j = i;
         while (j < count && alias_pages[first + j] == want) j++;
         uint64_t a = L.alias.base + (first + i) * PAGE, n = (j - i) * PAGE;
-        if (do_commit) commit(a, n, "physical memory");
+        if (do_commit) mem_commit(a, n, "physical memory");
         else decommit(a, n, "physical memory");
         memset(alias_pages + first + i, !want, j - i);
         i = j;
@@ -692,7 +697,7 @@ void *mem_kernel_alloc(uint64_t size, uint64_t align) {
         uint64_t need = align_up(a + bytes, KCOMMIT);
         if (!kcommitted) kcommitted = RT_KERNEL_BASE;
         if (need > kcommitted) {
-            commit(kcommitted, need - kcommitted, "kernel region");
+            mem_commit(kcommitted, need - kcommitted, "kernel region");
             kcommitted = need;
         }
         kbump = a + bytes;

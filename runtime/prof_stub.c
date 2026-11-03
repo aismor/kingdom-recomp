@@ -1,22 +1,25 @@
-// Linux side of prof_win.c: no sampling profiler (TOTK_PROFILE), no perf log or flight recorder; the frame times, the
-// render thread's waits, the replay time and the event counts feed the performance overlay (perfmon_frame), as
-// prof_win.c perf_present does.
+// Linux side of prof_win.c: no sampling profiler (TOTK_PROFILE) or perf log; frame times, render-thread waits, replay
+// time and event counts feed the performance overlay and flight recorder, as prof_win.c perf_present does.
 #include "os.h"
+#include "flight.h"
 #include "host.h"
 #include "perfmon.h"
 #include "platform/platform.h"
 
-static int perf_on;   // the full overlay: event counts are taken
+static int perf_on;   // the full overlay or flight recorder: event counts are taken
 static int overlay;   // performance overlay mode (perf_set_overlay): 0 off, 1 fps, 2 full
 static DWORD render_tid, replay_tid;
 
-void prof_start(void) {}
+void prof_start(void) {
+    flight_init();
+    perf_on = flight_on || overlay == 2;
+}
 void prof_write(void) {}
 __attribute__((weak)) void gfx_exit_log(void) {}
 
 void perf_set_overlay(int mode) {
     __atomic_store_n(&overlay, mode, __ATOMIC_RELAXED);
-    __atomic_store_n(&perf_on, mode == 2, __ATOMIC_RELAXED);
+    __atomic_store_n(&perf_on, flight_on || mode == 2, __ATOMIC_RELAXED);
 }
 
 int perf_gpu_timing(void) { return (rt_trace & RT_TRACE_PERF) || __atomic_load_n(&overlay, __ATOMIC_RELAXED) == 2; }
@@ -73,6 +76,7 @@ void perf_present(uint64_t frame) {
     uint64_t rep = (uint64_t)__atomic_exchange_n(&frame_replay_ns, 0, __ATOMIC_RELAXED);
     if (__atomic_load_n(&overlay, __ATOMIC_RELAXED))
         perfmon_frame(now, d, frame_ns, rep, __atomic_load_n(&counts[PERF_CNT_TEX_UP], __ATOMIC_RELAXED));
+    if (flight_on) flight_frame(frame, now, d, rep, frame_ns, counts);
     memset(frame_ns, 0, sizeof frame_ns);
     last = now;
 }

@@ -19,6 +19,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.request
 from pathlib import Path
 
 from . import ini
@@ -777,5 +778,103 @@ class Cleanup(Step):
         return {}
 
 
+# ---- automatic NVIDIA DLSS model (downloaded from NVIDIA's official repository, never stored in this repository)
+
+DLSS_VERSION = '310.9.1'
+DLSS_LICENSE_FILE = 'NVIDIA-DLSS-LICENSE.txt'
+DLSS_LICENSE_URL = f'https://raw.githubusercontent.com/NVIDIA/DLSS/v{DLSS_VERSION}/LICENSE.txt'
+DLSS_LICENSE_SIZE = 26620
+DLSS_LICENSE_SHA256 = 'd4216e39ebef5f9b50a6712ebb37beeb5379862a67733a9999c651f21592aaf0'
+if os.name == 'nt':
+    DLSS_FILE = 'nvngx_dlss.dll'
+    DLSS_PATH = f'lib/Windows_x86_64/rel/{DLSS_FILE}'
+    DLSS_SIZE = 58956912
+    DLSS_SHA256 = '3975567b8943c53acce397f2b72380092f84f162d00b0d2c7d08a1025c563983'
+else:
+    DLSS_FILE = f'libnvidia-ngx-dlss.so.{DLSS_VERSION}'
+    DLSS_PATH = f'lib/Linux_x86_64/rel/{DLSS_FILE}'
+    DLSS_SIZE = 59481944
+    DLSS_SHA256 = '7561f16cab74e2b7ccf791bf44bb9cc43abb44bcf78f33c5663520ad4e857e02'
+DLSS_URL = f'https://raw.githubusercontent.com/NVIDIA/DLSS/v{DLSS_VERSION}/{DLSS_PATH}'
+
+
+def nvidia_rtx(host):
+    return any('NVIDIA' in d.get('name', '').upper() and 'RTX' in d.get('name', '').upper()
+               for d in (host or {}).get('devices', []))
+
+
+class Dlss(Step):
+    """Install the official platform DLSS model on RTX systems. Failure is non-fatal and retried next time."""
+
+    id = 'dlss'
+
+    def key(self, ctx):
+        return fingerprint('dlss-1', DLSS_VERSION, DLSS_FILE, DLSS_SHA256)
+
+    def current(self, ctx, record):
+        if record.get('failed'):
+            return False
+        return not record.get('installed') or ((ctx.dest / DLSS_FILE).is_file() and
+                                                (ctx.dest / DLSS_LICENSE_FILE).is_file())
+
+    def run(self, ctx):
+        if not nvidia_rtx(getattr(ctx, 'host', None)):
+            return {'skipped': 'no_rtx'}
+        rep, target = ctx.reporter, ctx.dest / DLSS_FILE
+        if target.is_file():
+            if file_sha256(target) == DLSS_SHA256:
+                license_target = ctx.dest / DLSS_LICENSE_FILE
+                if license_target.is_file() and file_sha256(license_target) == DLSS_LICENSE_SHA256:
+                    return {'installed': DLSS_VERSION}
+                license_part = ctx.temp / (DLSS_LICENSE_FILE + '.part')
+                try:
+                    with urllib.request.urlopen(DLSS_LICENSE_URL, timeout=60) as response:
+                        license_data = response.read(DLSS_LICENSE_SIZE + 1)
+                    if (len(license_data) != DLSS_LICENSE_SIZE or
+                            hashlib.sha256(license_data).hexdigest() != DLSS_LICENSE_SHA256):
+                        raise OSError('the NVIDIA DLSS license did not match the pinned version')
+                    license_part.parent.mkdir(parents=True, exist_ok=True)
+                    license_part.write_bytes(license_data)
+                    replace_file(license_part, license_target)
+                    remove(license_part)
+                    return {'installed': DLSS_VERSION}
+                except OSError as e:
+                    remove(license_part)
+                    rep.warning('warn.dlss_download_failed', url=DLSS_LICENSE_URL, detail=str(e)[:300])
+                    return {'failed': True}
+            rep.warning('warn.dlss_kept', path=str(target))
+            return {'kept': True}
+        part = ctx.temp / (DLSS_FILE + '.part')
+        license_part = ctx.temp / (DLSS_LICENSE_FILE + '.part')
+        rep.progress('dlss', 'download', 0, DLSS_SIZE, 'bytes', force=True)
+        rep.log(f'dlss: {DLSS_URL} (license {DLSS_LICENSE_URL})')
+        try:
+            part.parent.mkdir(parents=True, exist_ok=True)
+            h, done = hashlib.sha256(), 0
+            with urllib.request.urlopen(DLSS_URL, timeout=60) as response, open(part, 'wb') as out:
+                while block := response.read(1 << 20):
+                    out.write(block)
+                    h.update(block)
+                    done += len(block)
+                    rep.progress('dlss', 'download', min(done, DLSS_SIZE), DLSS_SIZE, 'bytes')
+            if done != DLSS_SIZE or h.hexdigest() != DLSS_SHA256:
+                raise OSError(f'{done} bytes, SHA-256 {h.hexdigest()[:16]}, not the expected file')
+            with urllib.request.urlopen(DLSS_LICENSE_URL, timeout=60) as response, open(license_part, 'wb') as out:
+                license_data = response.read(DLSS_LICENSE_SIZE + 1)
+                out.write(license_data)
+            if len(license_data) != DLSS_LICENSE_SIZE or hashlib.sha256(license_data).hexdigest() != DLSS_LICENSE_SHA256:
+                raise OSError('the NVIDIA DLSS license did not match the pinned version')
+            replace_file(license_part, ctx.dest / DLSS_LICENSE_FILE)
+            replace_file(part, target)
+            remove(part)
+            remove(license_part)
+        except OSError as e:
+            remove(part)
+            remove(license_part)
+            rep.warning('warn.dlss_download_failed', url=DLSS_URL, detail=str(e)[:300])
+            return {'failed': True}
+        return {'installed': DLSS_VERSION}
+
+
 def all_steps():
-    return [Check(), Extract(), Lift(), Compile(), Prepare(), Cleanup()]
+    return [Check(), Extract(), Lift(), Compile(), Prepare(), Dlss(), Cleanup()]

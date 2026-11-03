@@ -4,6 +4,7 @@
  "step.lift": "Перевод кода игры в C",
  "step.compile": "Сборка totk.exe",
  "step.prepare": "Подготовка шейдеров",
+ "step.dlss": "Установка NVIDIA DLSS",
  "step.cleanup": "Уборка",
 
  "phase.check.host": "Проверка процессора и видеокарты",
@@ -28,6 +29,7 @@
  "phase.prepare.translate": "Трансляция шейдеров",
  "phase.prepare.libraries": "Сборка шейдеров для драйвера видеокарты",
  "phase.prepare.pack": "Упаковка кэша шейдеров в один файл",
+ "phase.dlss.download": "Загрузка NVIDIA DLSS с серверов NVIDIA",
  "phase.cleanup.ini": "Запись totk.ini",
  "phase.cleanup.temp": "Удаление временных файлов",
 
@@ -82,6 +84,8 @@
 
  "warn.lang_needs_fonts": "Для языка «{lang}» нужны системные шрифты Switch, которые установка не извлекает; часть текста может не отображаться.",
  "warn.npdm_differs": "main.npdm отличается от эталонного дампа {version}; используются только модули с кодом.",
+ "warn.dlss_kept": "Существующая библиотека DLSS в {path} имеет другую версию и была сохранена.",
+ "warn.dlss_download_failed": "Не удалось загрузить DLSS с {url}: {detail}. Игра продолжит работать без него; запустите установщик снова для повторной попытки.",
 
  "ui.title": "Установка TotK",
  "ui.version": "версия {version}",

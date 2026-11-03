@@ -602,15 +602,18 @@ void plat_gpu_load(PlatLoad *l, float *load_pct, float *vram_used_mb) {
     free(it);
 }
 
-void plat_mem_info(float *used_mb, float *total_mb, float *proc_mb) {
-    *used_mb = *total_mb = *proc_mb = -1;
+void plat_mem_info(float *used_mb, float *total_mb, float *proc_mb, float *private_mb) {
+    *used_mb = *total_mb = *proc_mb = *private_mb = -1;
     MEMORYSTATUSEX ms = {.dwLength = sizeof ms};
     if (GlobalMemoryStatusEx(&ms)) {
         *total_mb = (float)(ms.ullTotalPhys >> 20);
         *used_mb = (float)((ms.ullTotalPhys - ms.ullAvailPhys) >> 20);
     }
-    PROCESS_MEMORY_COUNTERS pmc;
-    if (K32GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof pmc)) *proc_mb = (float)(pmc.WorkingSetSize >> 20);
+    PROCESS_MEMORY_COUNTERS_EX pmc = {.cb = sizeof pmc};
+    if (K32GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS *)&pmc, sizeof pmc)) {
+        *proc_mb = (float)(pmc.WorkingSetSize >> 20);
+        *private_mb = (float)(pmc.PrivateUsage >> 20);
+    }
 }
 
 // ---- child processes

@@ -36,6 +36,7 @@
 
 #include "cfg.h"
 #include "host.h"
+#include "vk_dlaa.h"
 
 #define BASE_W 1920
 #define BASE_H 1080
@@ -78,6 +79,10 @@ static void decide(void) {
         {"quality", 2.0 / 3.0}, {"balanced", 0.58}, {"performance", 0.5}};
     for (int i = 0; cfg_bool("TOTK_DLAA") && i < 3; i++)
         if (!strcmp(m, dlss[i].name)) R.dlss_k = dlss[i].k;
+    if (R.dlss_k && !vk_dlaa_model_present()) {
+        rt_log("resolution: DLSS %s model is missing next to the executable; the scene follows render_scale", m);
+        R.dlss_k = 0;
+    }
     if (R.dlss_k) {
         k = R.dlss_k;
         R.scene_set = 1;

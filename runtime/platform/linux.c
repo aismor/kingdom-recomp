@@ -456,8 +456,8 @@ void plat_gpu_load(PlatLoad *l, float *load_pct, float *vram_used_mb) {
 
 // In use: MemTotal - MemAvailable (what Task Manager counts as in use); the process: its resident set (VmRSS), the
 // working set's counterpart.
-void plat_mem_info(float *used_mb, float *total_mb, float *proc_mb) {
-    *used_mb = *total_mb = *proc_mb = -1;
+void plat_mem_info(float *used_mb, float *total_mb, float *proc_mb, float *private_mb) {
+    *used_mb = *total_mb = *proc_mb = *private_mb = -1;
     char line[256];
     unsigned long long total = 0, avail = 0, rss = 0, v;
     FILE *f = fopen("/proc/meminfo", "r");
