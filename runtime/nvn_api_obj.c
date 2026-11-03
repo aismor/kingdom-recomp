@@ -197,6 +197,7 @@ NVN_API(nvnTextureInitialize) {
     o->magic = NVN_TEX_MAGIC;
     o->d = s->d;
     o->pool = s->pool;
+    o->pool_flags = s->pool ? (uint16_t)s->pool->flags : 0;
     o->off = s->off;
     o->has_layout = s->has_layout;
     memcpy(o->layout, s->layout, 8);
@@ -323,8 +324,11 @@ NVN_API(nvnTextureReadTexelsStrided) { read_texels(c, 1); }
 NVN_API(nvnTextureWriteTexels) { write_texels(c, 0); }
 NVN_API(nvnTextureWriteTexelsStrided) { write_texels(c, 1); }
 // void nvnTexture{Flush,Invalidate}Texels(const NVNtexture *t, const NVNtextureView *v, const NVNcopyRegion *r): texel
-// access is coherent
-NVN_API(nvnTextureFlushTexels) { (void)c; }
+// access is coherent; flush marks CPU-visible storage for re-upload to the host image
+NVN_API(nvnTextureFlushTexels) {
+    const tex_t *t = arg_p(c, 0);
+    if (t && t->mem && !nvn_gpu_only((uintptr_t)t->mem)) nvn_guest_written((uintptr_t)t->mem, t->L.size);
+}
 NVN_API(nvnTextureInvalidateTexels) { (void)c; }
 
 // ---------- Samplers

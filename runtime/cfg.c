@@ -49,7 +49,7 @@ static const char *const known[] = {
     "REPLAY_CHECK", "RESOLVE_CHECK", "ROMFS", "ROMFS_INDEX", "ROMFS_MMAP", "ROMFS_MODS", "ROMFS_PATCHES",
     "ROMFS_PROOF_DIR", "ROMFS_VERIFY", "RUMBLE", "RUMBLE_CURVE", "RUMBLE_STRENGTH", "RUMBLE_TRIGGERS", "SHADER_CACHE",
     "SHADER_MEMO", "SHADOW_RANGE", "SHADOW_RES", "SHADOW_SCALE", "SHARED_FONTS", "SHARPNESS", "SHOTS", "SHOTS_DIR", "SHOTS_FULL", "SPEED_PROBE", "SPIN", "SPIN_HANDOFF_US", "SPLIT_DRAWS", "SPLIT_US", "SWKBD_ANSWER",
-    "SWKBD_TEST", "TEST_PREPARE_SHADERS", "TEX_ALIAS", "TEX_MEMO", "TIMER_1MS", "TRACE", "UBO_SNAPSHOT", "UPSCALER", "VK_DYN_VERTEX", "VK_NO_FLOAT64",
+    "SWKBD_TEST", "TEST_PREPARE_SHADERS", "TEX_ALIAS", "TEX_MEMO", "TIMER_1MS", "TRACE", "TXD_TRANSPOSE", "UBO_SNAPSHOT", "UPSCALER", "VK_DYN_VERTEX", "VK_NO_FLOAT64",
     "VK_PRESENT", "VK_RECORDER", "VK_SSBO_ALIGN", "VK_SUBGROUP", "VK_SUBGROUP_PIN", "VK_VALIDATION", "VOLUME", "VRAM_HEADROOM", "VS_OUTS",
     "WINDOW_SIZE", "XLATE", "XLATE_ID", "XLATE_PROCS", "ZSTD_CHECK", "ZSTD_NATIVE",
 };
@@ -65,7 +65,7 @@ static const struct { const char *key, *section; } sections[] = {
     {"COLOR_CONTRAST", "display"}, {"COLOR_SATURATION", "display"}, {"COLOR_GAMMA", "display"},
     {"HDR", "display"}, {"HDR_PEAK_NITS", "display"}, {"HDR_GAME_NITS", "display"}, {"HDR_UI_NITS", "display"},
     {"SHADOW_RES", "display"}, {"SHADOW_SCALE", "display"}, {"SHADOW_RANGE", "display"}, {"CONTACT_SHADOWS", "display"},
-    {"PCSS", "display"},
+    {"PCSS", "display"}, {"ASSUME_FOCUS", "display"},
     {"MENU_LANG", "language"}, {"LANG", "language"}, {"OPERATION_MODE", "language"},
     {"VOLUME", "audio"},
     {"MOTION", "input"}, {"RUMBLE_STRENGTH", "input"}, {"RUMBLE_CURVE", "input"}, {"RUMBLE_TRIGGERS", "input"},
@@ -111,7 +111,7 @@ static const CfgMeta metas[] = {
     {"SHADOW_RES", "game", "game|256|512|768|1024|1536|2048", RESTART},
     {"SHADOW_SCALE", "1", "1..4", RESTART},
     {"SHADOW_RANGE", "100", "50..400", RESTART}, {"CONTACT_SHADOWS", "0", "0..100", RESTART},
-    {"PCSS", "0", "0..200", RESTART},
+    {"PCSS", "0", "0..200", RESTART}, {"ASSUME_FOCUS", "1", "0|1", RESTART},
     // Game
     {"FPS_LIMIT", "60", "30|60|120|144|display", LIVE}, {"FPS60", "1", "0|1", LIVE},
     {"REALTIME", "1", "0|1", RESTART}, {"CLOTH_REALTIME", "1", "0|1", RESTART},

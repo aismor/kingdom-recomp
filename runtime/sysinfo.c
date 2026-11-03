@@ -65,9 +65,13 @@ int sysinfo_text(char *buf, size_t n) {
     put(&o, "OS: %s\n", plat_os_version(s, sizeof s) ? s : "unknown");
     sysinfo_cpu_name(s, sizeof s);
     put(&o, "CPU: %s, %u logical processors\n", s[0] ? s : "unknown", plat_cpu_count());
-    float used, total, proc;
-    plat_mem_info(&used, &total, &proc);
-    if (total > 0) put(&o, "RAM: %.1f GB, %.1f GB in use, the game %.1f GB\n", total / 1024, used / 1024, proc / 1024);
+    float used, total, proc, priv;
+    plat_mem_info(&used, &total, &proc, &priv);
+    if (total > 0) {
+        put(&o, "RAM: %.1f GB, %.1f GB in use, the game %.1f GB working set", total / 1024, used / 1024, proc / 1024);
+        if (priv >= 0) put(&o, ", %.1f GB private", priv / 1024);
+        put(&o, "\n");
+    }
     VkCtx *c = vk_ctx();
     if (c) {
         VkPhysicalDeviceDriverProperties dp = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};

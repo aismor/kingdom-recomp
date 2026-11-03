@@ -114,8 +114,9 @@ void plat_cpu_load(PlatLoad *l, float *total_pct, float *proc_pct, float *temp_c
 // Since the previous call on l: the busiest GPU engine type in percent (as Task Manager shows it), and the adapter's
 // dedicated memory in use in MB. Any GPU vendor.
 void plat_gpu_load(PlatLoad *l, float *load_pct, float *vram_used_mb);
-// Physical memory in MB: in use and installed on the machine, and this process's working set.
-void plat_mem_info(float *used_mb, float *total_mb, float *proc_mb);
+// Physical memory in MB: in use and installed on the machine, and this process's working set and private commit.
+// private_mb is -1 where the platform does not expose a counterpart of Windows PrivateUsage.
+void plat_mem_info(float *used_mb, float *total_mb, float *proc_mb, float *private_mb);
 
 // ---- child processes: a program with stdin and stdout piped to us (stderr discarded), no console window.
 typedef struct PlatChild PlatChild;

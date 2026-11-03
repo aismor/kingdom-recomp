@@ -9,8 +9,7 @@
 //   TOTK_LOCALE=<BCP 47 tag>           else the language for this locale ("pt-BR"), else the Windows user locale;
 //                                      a language the game does not ship becomes en-US
 //   TOTK_OPERATION_MODE=docked|handheld   operation and performance mode reported to the game (default docked)
-//   TOTK_ASSUME_FOCUS=1                GetCurrentFocusState always reports in focus, whatever the window says; the
-//                                      window opens without taking focus (gfx_window.c), for scripted runs
+//   TOTK_ASSUME_FOCUS=1|0              1 (default): GetCurrentFocusState always reports in focus; 0 follows the window
 //   TOTK_SHARED_FONTS=<dir>            nn::pl shared fonts (tools/extract_fonts.py output), default
 //                                      <romfs>/../../firmware/shared-fonts
 #include "os.h"
@@ -158,16 +157,15 @@ static void ov_focus_mode(Cpu *c) {
     }
 }
 
-// FocusState GetCurrentFocusState(): 1 in focus, 2 out of focus (nn::oe::FocusState). In focus until the window
-// reports otherwise through oe_set_focus; TOTK_ASSUME_FOCUS=1 (unattended runs) pins it to 1. The caller of
-// oe_set_focus also pushes OE_MSG_FOCUS_STATE_CHANGED.
+// FocusState GetCurrentFocusState(): 1 in focus, 2 out of focus (nn::oe::FocusState). On the Switch, focus mode 2
+// suspends the whole process; here only the main thread stops while loaders and clocks continue, which can leave a load
+// permanently stuck. Keep focus by default, as MacNativeGames does; TOTK_ASSUME_FOCUS=0 restores window focus handling.
 static volatile LONG focus_state = 1;
 static int assume_focus(void) {
     static volatile LONG v = -1;
     LONG a = v;
     if (a < 0) {
-        const char *e = cfg_get("TOTK_ASSUME_FOCUS");
-        a = e && atoi(e) ? 1 : 0;
+        a = cfg_bool("TOTK_ASSUME_FOCUS") ? 1 : 0;
         InterlockedExchange(&v, a);
     }
     return (int)a;

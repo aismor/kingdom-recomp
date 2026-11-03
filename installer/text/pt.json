@@ -4,6 +4,7 @@
  "step.lift": "Traduzindo o código do jogo para C",
  "step.compile": "Compilando totk.exe",
  "step.prepare": "Preparando os shaders",
+ "step.dlss": "Instalando o NVIDIA DLSS",
  "step.cleanup": "Limpando",
 
  "phase.check.host": "Verificando o processador e a placa de vídeo",
@@ -28,6 +29,7 @@
  "phase.prepare.translate": "Traduzindo os shaders",
  "phase.prepare.libraries": "Compilando os shaders para o driver gráfico",
  "phase.prepare.pack": "Empacotando o cache de shaders em um arquivo",
+ "phase.dlss.download": "Baixando o NVIDIA DLSS da NVIDIA",
  "phase.cleanup.ini": "Gravando totk.ini",
  "phase.cleanup.temp": "Removendo arquivos temporários",
 
@@ -82,6 +84,8 @@
 
  "warn.lang_needs_fonts": "Texto em {lang} precisa das fontes do sistema do Switch, que o instalador não extrai; parte do texto pode não aparecer.",
  "warn.npdm_differs": "main.npdm difere do dump de referência {version}; só os módulos de código são usados.",
+ "warn.dlss_kept": "A biblioteca DLSS existente em {path} é de outra versão e foi preservada.",
+ "warn.dlss_download_failed": "Não foi possível baixar o DLSS de {url}: {detail}. O jogo continua funcionando sem ele; execute o instalador novamente para tentar de novo.",
 
  "ui.title": "Instalação TotK",
  "ui.version": "versão {version}",

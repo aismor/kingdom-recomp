@@ -1,16 +1,20 @@
 // DLAA: NVIDIA DLSS at the scene's own size (TOTK_DLAA, totk.ini dlaa). NGX is loaded at run time from the driver's
-// NGX core (_nvngx.dll, found through HKLM\SOFTWARE\NVIDIA Corporation\Global\NGXCore); the DLSS model
-// (nvngx_dlss.dll) is loaded by NGX from the folder of totk.exe. No NVIDIA SDK code or header is compiled in: the few
+// NGX core: _nvngx.dll from the driver on Windows, or libnvidia-ngx.so.1 from the driver on Linux. The DLSS model is
+// loaded from the executable's folder (nvngx_dlss.dll or libnvidia-ngx-dlss.so.<version>). No NVIDIA SDK code or header
+// is compiled in: the few
 // NGX types used are declared here from the SDK's documented ABI, the way the Metroid Dread recomp's dlss.c reaches
 // the core (read for behaviour only).
 //
-// The core's parameter object is a C++ class whose virtual functions are called through the MSVC vtable: the Set
-// overloads in slots 0-7 and the Get overloads in 8-15, each group in reverse declaration order. vtable_ok checks that
-// layout with a set-then-get round trip before anything relies on it.
+// The core's parameter object is a C++ class. MSVC lays out each overload group in reverse declaration order; the
+// Itanium C++ ABI used by the Linux core uses declaration order. vtable_ok checks the selected layout with a
+// set-then-get round trip before anything relies on it.
 //
 // Where DLAA runs in the frame, the jitter and the motion vectors: see the sections below.
 #ifdef _WIN32
 #include <windows.h>
+#else
+#include <dirent.h>
+#endif
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,6 +23,7 @@
 
 #include "cfg.h"
 #include "host.h"
+#include "platform/platform.h"
 #include "vk.h"
 #include "vk_dlaa.h"
 #include "vk_exec.h"
@@ -55,9 +60,11 @@ typedef NgxResult (*PFN_DestroyParams)(NgxParam *);
 typedef NgxResult (*PFN_Create)(VkCommandBuffer, int feature, NgxParam *, NgxHandle **);
 typedef NgxResult (*PFN_Evaluate)(VkCommandBuffer, const NgxHandle *, const NgxParam *, void *callback);
 typedef NgxResult (*PFN_Release)(NgxHandle *);
+typedef NgxResult (*PFN_Shutdown)(void);
+typedef NgxResult (*PFN_Shutdown1)(VkDevice);
 
 static struct {
-    HMODULE core;
+    void *core;
     PFN_Init init;
     PFN_ReqExt req_ext;
     PFN_Params caps, alloc_params;
@@ -65,9 +72,40 @@ static struct {
     PFN_Create create;
     PFN_Evaluate evaluate;
     PFN_Release release;
-    int tried, loaded, available;
+    PFN_Shutdown shutdown;
+    PFN_Shutdown1 shutdown1;
+    int tried, loaded, initialized, available;
     int wanted;   // -1 not read yet
 } N = {.wanted = -1};
+
+int vk_dlaa_model_present(void) {
+    char exe[4096];
+    if (!plat_exe_path(exe, sizeof exe)) return 0;
+#ifndef _WIN32
+    // os_linux.c exposes the executable through the Win32-compatible API and therefore returns '\\' separators.
+    for (char *p = exe; *p; p++)
+        if (*p == '\\') *p = '/';
+#endif
+    char *last = strrchr(exe, '/');
+#ifdef _WIN32
+    char *back = strrchr(exe, '\\');
+    if (!last || (back && back > last)) last = back;
+#endif
+    if (!last) return 0;
+#ifdef _WIN32
+    snprintf(last + 1, (size_t)(exe + sizeof exe - last - 1), "nvngx_dlss.dll");
+    return plat_file_exists(exe);
+#else
+    *last = 0;
+    DIR *d = opendir(exe);
+    if (!d) return 0;
+    int found = 0;
+    for (struct dirent *e; !found && (e = readdir(d));)
+        found = !strncmp(e->d_name, "libnvidia-ngx-dlss.so.", 22);
+    closedir(d);
+    return found;
+#endif
+}
 
 typedef void (*SetI)(NgxParam *, const char *, int);
 typedef void (*SetU)(NgxParam *, const char *, unsigned);
@@ -77,7 +115,11 @@ typedef NgxResult (*GetI)(const NgxParam *, const char *, int *);
 typedef NgxResult (*GetU)(const NgxParam *, const char *, unsigned *);
 typedef NgxResult (*GetF)(const NgxParam *, const char *, float *);
 typedef NgxResult (*GetP)(const NgxParam *, const char *, void **);
+#ifdef _WIN32
 enum { S_P = 0, S_D12, S_D11, S_I, S_U32, S_D, S_F, S_U64, G_P, G_D12, G_D11, G_I, G_U32, G_D, G_F, G_U64 };
+#else
+enum { S_U64 = 0, S_F, S_D, S_U32, S_I, S_D11, S_D12, S_P, G_U64, G_F, G_D, G_U32, G_I, G_D11, G_D12, G_P };
+#endif
 static void p_seti(NgxParam *p, const char *n, int v) { ((SetI)p->vt->slot[S_I])(p, n, v); }
 static void p_setu(NgxParam *p, const char *n, unsigned v) { ((SetU)p->vt->slot[S_U32])(p, n, v); }
 static void p_setf(NgxParam *p, const char *n, float v) { ((SetF)p->vt->slot[S_F])(p, n, v); }
@@ -99,6 +141,7 @@ int vk_dlaa_wanted(void) {
 static int core_load(void) {
     if (N.tried) return N.loaded;
     N.tried = 1;
+#ifdef _WIN32
     char dir[MAX_PATH] = {0}, path[MAX_PATH + 32];
     DWORD n = sizeof dir;
     if (RegGetValueA(HKEY_LOCAL_MACHINE, "SOFTWARE\\NVIDIA Corporation\\Global\\NGXCore", "FullPath", RRF_RT_REG_SZ,
@@ -112,7 +155,16 @@ static int core_load(void) {
         rt_log("dlaa: cannot load %s (error %lu): DLAA off", path, GetLastError());
         return 0;
     }
-#define FN(f, name) N.f = (void *)GetProcAddress(N.core, name)
+#define FN(f, name) N.f = (void *)GetProcAddress((HMODULE)N.core, name)
+#else
+    const char *path = "libnvidia-ngx.so.1";
+    N.core = plat_lib_open(path);
+    if (!N.core) {
+        rt_log("dlaa: cannot load %s (not an NVIDIA driver, or one without NGX): DLAA off", path);
+        return 0;
+    }
+#define FN(f, name) N.f = plat_lib_sym(N.core, name)
+#endif
     FN(init, "NVSDK_NGX_VULKAN_Init_Ext2");
     FN(req_ext, "NVSDK_NGX_VULKAN_RequiredExtensions");
     FN(caps, "NVSDK_NGX_VULKAN_GetCapabilityParameters");
@@ -121,6 +173,8 @@ static int core_load(void) {
     FN(create, "NVSDK_NGX_VULKAN_CreateFeature");
     FN(evaluate, "NVSDK_NGX_VULKAN_EvaluateFeature");
     FN(release, "NVSDK_NGX_VULKAN_ReleaseFeature");
+    FN(shutdown, "NVSDK_NGX_VULKAN_Shutdown");
+    FN(shutdown1, "NVSDK_NGX_VULKAN_Shutdown1");
 #undef FN
     if (!N.init || !N.req_ext || !N.caps || !N.alloc_params || !N.create || !N.evaluate || !N.release) {
         rt_log("dlaa: the NGX core %s lacks Vulkan entry points: DLAA off", path);
@@ -130,6 +184,26 @@ static int core_load(void) {
     rt_log("dlaa: NGX core %s", path);
     return 1;
 }
+
+#ifndef _WIN32
+static int utf8_to_wide(const char *in, wchar_t *out, size_t cap) {
+    const unsigned char *u = (const unsigned char *)in;
+    size_t n = 0;
+    while (*u) {
+        unsigned c = *u++, more = c < 0x80 ? 0 : c >= 0xF0 ? 3 : c >= 0xE0 ? 2 : c >= 0xC0 ? 1 : 4;
+        if (more == 4) return 0;
+        if (more) c &= 0x3F >> more;
+        for (unsigned k = 0; k < more; k++, u++) {
+            if ((*u & 0xC0) != 0x80) return 0;
+            c = c << 6 | (*u & 0x3F);
+        }
+        if (n + 1 >= cap) return 0;
+        out[n++] = (wchar_t)c;
+    }
+    out[n] = 0;
+    return 1;
+}
+#endif
 
 static int listed(const char *const *list, uint32_t n, const char *s) {
     for (uint32_t i = 0; i < n; i++)
@@ -178,10 +252,24 @@ static int vtable_ok(void) {
 
 void vk_dlaa_init(void) {
     if (!vk_dlaa_wanted() || !core_load()) return;
+#ifdef _WIN32
     wchar_t wdir[MAX_PATH];
     DWORD len = GetModuleFileNameW(NULL, wdir, MAX_PATH);
     while (len && wdir[len - 1] != L'\\') len--;
     wdir[len] = 0;
+#else
+    char dir[4096];
+    wchar_t wdir[4096];
+    int have_dir = plat_exe_path(dir, sizeof dir);
+    if (have_dir)
+        for (char *p = dir; *p; p++)
+            if (*p == '\\') *p = '/';
+    char *cut = have_dir ? strrchr(dir, '/') : NULL;
+    if (!cut || !utf8_to_wide((cut[1] = 0, dir), wdir, sizeof wdir / sizeof *wdir)) {
+        rt_log("dlaa: cannot name the executable's folder for NGX: DLAA off");
+        return;
+    }
+#endif
     // 231313132: the application id NVIDIA's DLSS samples use for builds without an NVIDIA-issued id
     const VkCtx *c = vk_ctx();
     NgxResult r = N.init(231313132ull, wdir, c->instance, c->phys, c->device, vkGetInstanceProcAddr,
@@ -190,16 +278,24 @@ void vk_dlaa_init(void) {
         rt_log("dlaa: NGX init failed (%08x): DLAA off", (unsigned)r);
         return;
     }
+    N.initialized = 1;
     if (!vtable_ok()) return;
     NgxParam *caps = NULL;
     int avail = 0, driver = 0;
     if (NGX_OK(N.caps(&caps)) && caps) {
         p_geti(caps, "SuperSampling.Available", &avail);
         p_geti(caps, "SuperSampling.NeedsUpdatedDriver", &driver);
+        if (N.destroy_params) N.destroy_params(caps);
     }
     N.available = avail != 0;
-    rt_log("dlaa: NGX up; DLSS %s%s", avail ? "available" : "NOT available (is nvngx_dlss.dll next to totk.exe?)",
+#ifdef _WIN32
+    const char *model = "nvngx_dlss.dll";
+#else
+    const char *model = "libnvidia-ngx-dlss.so.<version>";
+#endif
+    rt_log("dlaa: NGX up; DLSS %s%s", avail ? "available" : "NOT available (is the model next to the executable?)",
            driver ? "; the driver needs an update" : "");
+    if (!avail) rt_log("dlaa: expected model: %s", model);
 }
 
 // ---------------------------------------------------------------- where DLAA runs in TotK's frame
@@ -281,12 +377,36 @@ static int image2d(uint32_t w, uint32_t h, VkFormat f, VkImageUsageFlags usage, 
 static void free_size(struct Size *e) {
     const VkCtx *c = vk_ctx();
     vkDeviceWaitIdle(c->device);   // a third scene size: the evicted images may still be in flight
+    if (e->feat) N.release(e->feat);
     if (e->out_view) vkDestroyImageView(c->device, e->out_view, NULL);
     if (e->mv_view) vkDestroyImageView(c->device, e->mv_view, NULL);
     if (e->out) vmaDestroyImage(c->vma, e->out, e->out_mem);
     if (e->mv) vmaDestroyImage(c->vma, e->mv, e->mv_mem);
-    if (e->feat) N.release(e->feat);
     memset(e, 0, sizeof *e);
+}
+
+void vk_dlaa_shutdown(void) {
+    const VkCtx *c = vk_ctx();
+    if (!c || !c->device) return;
+    for (int i = 0; i < 3; i++)
+        if (D.sizes[i].out || D.sizes[i].feat) free_size(&D.sizes[i]);
+    if (D.params && N.destroy_params) N.destroy_params(D.params);
+    if (D.mv_pipe) vkDestroyPipeline(c->device, D.mv_pipe, NULL);
+    if (D.mv_samp) vkDestroySampler(c->device, D.mv_samp, NULL);
+    if (D.mv_layout) vkDestroyPipelineLayout(c->device, D.mv_layout, NULL);
+    if (D.mv_dsl) vkDestroyDescriptorSetLayout(c->device, D.mv_dsl, NULL);
+    if (D.camb) vmaDestroyBuffer(c->vma, D.camb, D.camb_mem);
+    if (N.initialized && (N.shutdown || N.shutdown1)) {
+        // Shutdown1 is the current SDK API, but NVIDIA's Linux 615.78 core crashes in it after Init_Ext2 when no
+        // feature was created (the device probe). Its exported deprecated entry point handles both that case and the
+        // normal feature lifetime, and is the compatible fallback for older drivers too.
+        NgxResult r = N.shutdown ? N.shutdown() : N.shutdown1(c->device);
+        if (!NGX_OK(r)) rt_log("dlaa: NGX shutdown failed (%08x)", (unsigned)r);
+    }
+    memset(&D, 0, sizeof D);
+    D.mv_ok = -1;
+    N.available = 0;
+    N.initialized = 0;
 }
 
 // The entry for a scene and output size: its output (RGBA16F at the output size, written by DLSS, then blitted into
@@ -669,20 +789,3 @@ int vk_dlaa_skip_draw(VkExec *ex, const GfxShader *fs) {
     if (!ex->depth.image) return D.up;   // the scaling pass
     return !fxaa;
 }
-
-#else
-// NGX is loaded as a Windows DLL; elsewhere DLAA, the DLSS modes' scaling and the FXAA switch do nothing.
-#include "vk_dlaa.h"
-
-int vk_dlaa_wanted(void) { return 0; }
-void vk_dlaa_instance_exts(const char **ext, uint32_t *n, uint32_t max) { (void)ext, (void)n, (void)max; }
-void vk_dlaa_device_exts(const VkExtensionProperties *have, uint32_t nhave, const char **ext, uint32_t *n, uint32_t max) {
-    (void)have, (void)nhave, (void)ext, (void)n, (void)max;
-}
-void vk_dlaa_init(void) {}
-void vk_dlaa_pass(VkExec *ex) { (void)ex; }
-void vk_dlaa_frame(void) {}
-void vk_dlaa_draw(VkExec *ex) { (void)ex; }
-void vk_dlaa_viewport(VkExec *ex, VkViewport *v) { (void)ex, (void)v; }
-int vk_dlaa_skip_draw(VkExec *ex, const GfxShader *fs) { (void)ex, (void)fs; return 0; }
-#endif
