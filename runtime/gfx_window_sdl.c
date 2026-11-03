@@ -607,6 +607,12 @@ static DWORD WINAPI window_main(void *arg) {
     cfg_window_size(&cw, &ch);
     g_background = cfg_get("TOTK_BACKGROUND_WINDOW") && atoi(cfg_get("TOTK_BACKGROUND_WINDOW"));
     SDL_WindowFlags flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE;
+    // Starting windowed and entering fullscreen after Vulkan creates its surface can leave the first swapchain at the
+    // desktop's usable height (for example 1366 on a 1440-line monitor with a panel). Creating the foreground window
+    // fullscreen makes SDL and the surface agree before the Vulkan thread can query their extent.
+    if (!g_background && cfg_fullscreen()) flags |= SDL_WINDOW_FULLSCREEN;
+    g_saved_w = cw;
+    g_saved_h = ch;
     g_window = SDL_CreateWindow("Kingdom Recomp", cw, ch, flags);
     if (!g_window) {
         rt_log("gfx: SDL_CreateWindow failed (%s)", SDL_GetError());
@@ -614,7 +620,7 @@ static DWORD WINAPI window_main(void *arg) {
     } else {
         SDL_ShowWindow(g_window);
         if (g_background) SDL_MinimizeWindow(g_window);
-        else g_fs_pending = cfg_fullscreen();
+        else g_fs_pending = cfg_fullscreen() && !is_fullscreen(g_window);
         note_applied();
         refresh_rate_update(g_window, 1);
         dispatch_winmsg(WM_CREATE, 0, 0);
