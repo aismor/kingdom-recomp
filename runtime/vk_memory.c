@@ -46,6 +46,9 @@ enum { MS_NONE, MS_ON, MS_REFUSED };
 
 typedef struct { struct PoolRec *phys; uint64_t off; } VPage;   // virtual page -> physical pool and offset
 
+#define FLUSH_RANGES 32
+typedef struct { uint64_t lo, hi; } FlushRange;
+
 typedef struct PoolRec {
     const pool_t *key;
     int kind;
@@ -71,7 +74,9 @@ typedef struct PoolRec {
     uint32_t wb_sub;                   // replay: the last submission that wrote mirror bytes back to guest memory
     uint32_t mgen;                     // gen_lock: every page write stamped up to this generation is in the mirror
                                        // (or in a copy queued before its next use)
-    uint64_t fl_lo, fl_hi;             // flush_lock: nvnMemoryPoolFlushMappedRange bytes not copied yet (fl_hi 0: none)
+    FlushRange fl[FLUSH_RANGES + 1];   // flush_lock: pending flushed pages, sorted and non-touching
+    int fl_n;
+    uint64_t fl_calls, fl_sum;
 } PoolRec;
 
 static void mirror_forget(PoolRec *r);   // pool_lock exclusive: off the mirrored list
@@ -980,6 +985,7 @@ static int npend, cpend, nwbl, cwbl;
 static VkBufferCopy *mregions;         // replay: vkCmdCopyBuffer regions
 static int cregions;
 static SRWLOCK flush_lock = SRWLOCK_INIT;
+static int flush_cap = FLUSH_RANGES;
 
 typedef struct {
     uint64_t subs, syncs, upload_bytes, upload_copies, first_n, first_bytes, wb_bytes, wb_copies, wb_ranges;
@@ -1006,6 +1012,10 @@ static void mirror_mode(int discrete) {
     const char *g = cfg_get("TOTK_MIRROR_GAP");
     mirror_gap = g && *g ? atoi(g) : 2;
     if (mirror_gap < 0) mirror_gap = 0;
+    if (rt_knob("FLUSH_SPAN", "0")) {
+        flush_cap = 1;
+        rt_log("mem: a pool's flushes copy one span from the lowest to the highest (TOTK_FLUSH_SPAN=1)");
+    }
     // Submissions a region stays unwritten before it is frozen. 60 rather than 300: in a fight 100 of the 257 MiB
     // queried a frame lay in regions idle for 30-299 submissions, and a thaw by a write costs about 60 us.
     const char *fi = cfg_get("TOTK_FREEZE_IDLE");
@@ -1202,14 +1212,18 @@ static void mirror_sync(PoolRec *r) {
     r->mgen = gen_now;
     if (excl) ReleaseSRWLockExclusive(&gen_lock);
     else ReleaseSRWLockShared(&gen_lock);
-    if (__atomic_load_n(&r->fl_hi, __ATOMIC_ACQUIRE)) {
+    if (__atomic_load_n(&r->fl_n, __ATOMIC_ACQUIRE)) {
+        FlushRange fl[FLUSH_RANGES + 1];
         AcquireSRWLockExclusive(&flush_lock);
-        uint64_t a = r->fl_lo, b = r->fl_hi;
-        r->fl_hi = 0;
+        int n = r->fl_n;
+        memcpy(fl, r->fl, (size_t)n * sizeof *fl);
+        r->fl_n = 0;
+        r->fl_calls = r->fl_sum = 0;
         ReleaseSRWLockExclusive(&flush_lock);
-        a = a > lo ? a & ~0xfffull : lo;
-        b = b < hi ? (b + 0xfff) & ~0xfffull : hi;
-        if (a < b) range_add(&pend, &npend, &cpend, r, a - lo, b - a);
+        for (int i = 0; i < n; i++) {
+            uint64_t a = fl[i].lo > lo ? fl[i].lo : lo, b = fl[i].hi < hi ? fl[i].hi : hi;
+            if (a < b) range_add(&pend, &npend, &cpend, r, a - lo, b - a);
+        }
     }
     mrep.syncs++;
     mrep.sync_t += qpc() - t0;
@@ -1244,6 +1258,49 @@ void vk_mem_gpu_wrote(const VkMemSpan *sp, uint64_t size) {
     range_add(&wbl, &nwbl, &cwbl, r, sp->offset, size);
 }
 
+// Adds [a, b) to sorted ranges that do not touch. Above cap, the nearest pair merges so the list includes the least
+// possible unflushed memory. cap 1 restores the old single-span behaviour.
+static int flush_add(FlushRange *l, int n, uint64_t a, uint64_t b, int cap) {
+    int i = 0;
+    while (i < n && l[i].hi < a) i++;
+    int j = i;
+    for (; j < n && l[j].lo <= b; j++) {
+        if (l[j].lo < a) a = l[j].lo;
+        if (l[j].hi > b) b = l[j].hi;
+    }
+    memmove(l + i + 1, l + j, (size_t)(n - j) * sizeof *l);
+    l[i] = (FlushRange){a, b};
+    n += 1 - (j - i);
+    if (n > cap) {
+        int k = 0;
+        for (int x = 1; x + 1 < n; x++)
+            if (l[x + 1].lo - l[x].hi < l[k + 1].lo - l[k].hi) k = x;
+        l[k].hi = l[k + 1].hi;
+        memmove(l + k + 1, l + k + 2, (size_t)(n - k - 2) * sizeof *l);
+        n--;
+    }
+    return n;
+}
+
+int vk_mem_flush_add_probe(void) {
+    FlushRange l[5];
+    int n = 0;
+    n = flush_add(l, n, 0x8000, 0x9000, 4);
+    n = flush_add(l, n, 0x1000, 0x2000, 4);
+    n = flush_add(l, n, 0x4000, 0x5000, 4);
+    if (n != 3 || l[0].lo != 0x1000 || l[1].lo != 0x4000 || l[2].hi != 0x9000) return 1;
+    n = flush_add(l, n, 0x2000, 0x3000, 4);
+    if (n != 3 || l[0].hi != 0x3000) return 2;
+    n = flush_add(l, n, 0x800, 0x8800, 4);
+    if (n != 1 || l[0].lo != 0x800 || l[0].hi != 0x9000) return 3;
+    n = 0;
+    n = flush_add(l, n, 0x10000, 0x11000, 2);
+    n = flush_add(l, n, 0x40000, 0x41000, 2);
+    n = flush_add(l, n, 0x12000, 0x13000, 2);
+    if (n != 2 || l[0].lo != 0x10000 || l[0].hi != 0x13000 || l[1].lo != 0x40000) return 4;
+    return 0;
+}
+
 void nvn_pool_flushed(const pool_t *p, uint64_t off, uint64_t size) {
     if (!vk_mirror_on || !size || !p->mem) return;
     InterlockedIncrement64(&m_flush_calls);
@@ -1252,13 +1309,12 @@ void nvn_pool_flushed(const pool_t *p, uint64_t off, uint64_t size) {
     const pidx_ent *e = pidx_find(&pool_index, (uintptr_t)p->mem, 0);
     PoolRec *r = e && e->key == p ? e->buf : NULL;
     if (r && r->mstate == MS_ON) {
-        uint64_t a = (uintptr_t)p->mem + off, b = a + size;
+        uint64_t a = ((uintptr_t)p->mem + off) & ~0xfffull;
+        uint64_t b = ((uintptr_t)p->mem + off + size + 0xfff) & ~0xfffull;
         AcquireSRWLockExclusive(&flush_lock);
-        if (!r->fl_hi) r->fl_lo = a, r->fl_hi = b;
-        else {
-            if (a < r->fl_lo) r->fl_lo = a;
-            if (b > r->fl_hi) r->fl_hi = b;
-        }
+        __atomic_store_n(&r->fl_n, flush_add(r->fl, r->fl_n, a, b, flush_cap), __ATOMIC_RELEASE);
+        r->fl_calls++;
+        r->fl_sum += size;
         ReleaseSRWLockExclusive(&flush_lock);
     }
     ReleaseSRWLockShared(&pool_lock);

@@ -812,6 +812,8 @@ static int test_nvnx(const GfxBackend *b, uint8_t *guest, int *bytes) {
 static int test_mirror(const GfxBackend *b, uint8_t *guest, int *bytes) {
     *bytes = 0;
     if (!vk_mirror_on) return 0;
+    int fl_bad = vk_mem_flush_add_probe();
+    CHECK(!fl_bad, "flush range list check %d failed", fl_bad);
     pool_t pool = {.magic = NVN_POOL_MAGIC, .flags = 0x22, .mem = guest + 0xC00000, .size = 0x100000,
                    .game_mem = guest + 0xC00000};
     CHECK(b->pool_init(&pool), "pool_init of a CPU-visible pool for the mirror part");
