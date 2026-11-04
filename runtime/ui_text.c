@@ -321,6 +321,7 @@ static const char *const text_en[UI_TEXT_COUNT] = {
     [UI_MENU_MEMORY_AUTO] = "Automatic", [UI_MENU_MEMORY_IMPORT] = "Import", [UI_MENU_MEMORY_MIRROR] = "Mirror",
     [UI_MENU_MEMORY_VERIFY] = "Verify",
     [UI_MENU_TEX_ALIAS] = "Texture aliasing", [UI_MENU_TEX_ALIAS_DESC] = "A new texture created over a live texture's memory starts with that content instead of empty.",
+    [UI_MENU_TEX_VRAM_PRESSURE] = "Texture memory limit", [UI_MENU_TEX_VRAM_PRESSURE_DESC] = "Percent of video memory above which textures the game released are dropped (they come back from storage when used again). 0 keeps them.",
     [UI_MENU_LOD_GUARD] = "LOD guard", [UI_MENU_LOD_GUARD_DESC] = "Prevents objects flashing in the wrong place or a flat far field for a frame, by waiting for the game to finish rewriting level-of-detail data before the GPU reads it.",
     [UI_MENU_FIX_C0] = "Constant buffer fix",
     [UI_MENU_FIX_C0_DESC] = "Fills the driver-reserved constant bank c0 (storage sizes, dispatch size, point size, base instance) instead of reading zeros.",
@@ -672,6 +673,7 @@ static const char *const text_ru[UI_TEXT_COUNT] = {
     [UI_MENU_MEMORY_AUTO] = "Автоматически", [UI_MENU_MEMORY_IMPORT] = "Импорт", [UI_MENU_MEMORY_MIRROR] = "Зеркало",
     [UI_MENU_MEMORY_VERIFY] = "Проверка",
     [UI_MENU_TEX_ALIAS] = "Наследование содержимого текстур", [UI_MENU_TEX_ALIAS_DESC] = "Новая текстура поверх памяти живой текстуры получает её содержимое, а не пустую.",
+    [UI_MENU_TEX_VRAM_PRESSURE] = "Предел памяти текстур", [UI_MENU_TEX_VRAM_PRESSURE_DESC] = "Процент видеопамяти, выше которого освобождённые игрой текстуры удаляются (при повторном использовании загружаются снова). 0 — не удалять.",
     [UI_MENU_LOD_GUARD] = "Защита LOD", [UI_MENU_LOD_GUARD_DESC] = "Не даёт объектам мелькать не на своём месте, а дальнему плану — на кадр становиться плоским: ждёт, пока игра допишет данные уровней детализации, и только потом их читает GPU.",
     [UI_MENU_FIX_C0] = "Исправление константного буфера",
     [UI_MENU_FIX_C0_DESC] = "Заполняет зарезервированный драйвером банк констант c0 (размеры хранилищ, размер запуска, размер точки, базовый экземпляр) вместо чтения нулей.",
@@ -1030,6 +1032,9 @@ static const char *const text_pt[UI_TEXT_COUNT] = {
     [UI_MENU_TEX_ALIAS] = "Alias de textura",
     [UI_MENU_TEX_ALIAS_DESC] = "Uma textura nova criada sobre a memória de uma textura ativa começa com esse conteúdo "
                                "em vez de vazio.",
+    [UI_MENU_TEX_VRAM_PRESSURE] = "Limite de memória de texturas",
+    [UI_MENU_TEX_VRAM_PRESSURE_DESC] = "Percentual da memória de vídeo acima do qual texturas liberadas pelo jogo são "
+                                       "descartadas e recarregadas quando usadas novamente. 0 mantém todas.",
     [UI_MENU_LOD_GUARD] = "Proteção LOD",
     [UI_MENU_LOD_GUARD_DESC] = "Evita objetos piscando no lugar errado ou um horizonte plano por um quadro, esperando o "
                                "jogo terminar de reescrever dados de nível de detalhe antes da GPU ler.",
