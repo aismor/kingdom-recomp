@@ -86,7 +86,10 @@ From the repository root, in PowerShell. Every step that depends on the game ver
    .venv\Scripts\python tools\build_game.py --version <ver>
    ```
 
-   Lifting takes about 15 s, a clean compile about 200 s on 24 threads; later builds recompile only what changed.
+    `gen.py` sizes its emit pool from the CPU count and free memory. `--jobs N` or `TOTK_LIFT_JOBS=N` overrides it.
+    After a worker runs out of memory, emission restarts with half as many workers, down to one.
+
+    Lifting takes about 15 s, a clean compile about 200 s on 24 threads; later builds recompile only what changed.
    `--patches` builds in the frame-rate, resolution and other patch sets, switchable at run time. The link copies
    `SDL3.dll`, `libiconv-2.dll` and `libopus-0.dll` next to the exe.
 
