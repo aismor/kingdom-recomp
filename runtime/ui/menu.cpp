@@ -1136,12 +1136,11 @@ static void perf_full_draw(const MenuTarget *t, float scale) {
         static const PerfCol c2[] = {{UI_MENU_OV_FMT_TEMP, 188}, {UI_MENU_OV_FMT_GB_OF, 888.8f}, {UI_MENU_OV_LOW1, 888},
                                      {UI_MENU_OV_MAX_MS, 8888.8f}};
         static const PerfCol c3[] = {{UI_MENU_OV_FMT_POWER, 888}, {UI_MENU_OV_FMT_MHZ, 8888}, {UI_MENU_OV_GAME_PCT, 100},
-                                     {UI_MENU_OV_GAME_GB, 888.8f}, {UI_MENU_OV_PRIVATE_GB, 888.8f},
-                                     {UI_MENU_OV_GUEST_GB, 888.8f}, {UI_MENU_OV_LOW01, 888}};
+                                     {UI_MENU_OV_GAME_GB, 888.8f}, {UI_MENU_OV_LOW01, 888}};
         perf_column("##c0", nullptr, 0, labels, 6);
         perf_column("##c1", c1, 4);
         perf_column("##c2", c2, 4);
-        perf_column("##c3", c3, 7);
+        perf_column("##c3", c3, 5);
         perf_label(UI_MENU_OV_GPU, gpu_c);
         perf_cell(UI_MENU_OV_FMT_PCT, s.gpu_pct);
         perf_cell(UI_MENU_OV_FMT_TEMP, s.gpu_temp_c);
@@ -1158,15 +1157,7 @@ static void perf_full_draw(const MenuTarget *t, float scale) {
         perf_cell(UI_MENU_OV_FMT_GB, perf_gb(s.ram_used_mb));
         perf_cell(UI_MENU_OV_FMT_GB_OF, perf_gb(s.ram_total_mb));
         perf_cell(UI_MENU_OV_GAME_GB, perf_gb(s.ram_game_mb));
-        ImGui::TableNextColumn();
-        ImGui::TableNextColumn();
-        ImGui::TableNextColumn();
-        perf_cell(UI_MENU_OV_PRIVATE_GB, perf_gb(s.ram_private_mb));
-        ImGui::TableNextColumn();
-        ImGui::TableNextColumn();
-        ImGui::TableNextColumn();
-        perf_cell(UI_MENU_OV_GUEST_GB, perf_gb(s.ram_guest_mb));
-        ImGui::TableNextRow(ImGuiTableRowFlags_None, 6 * scale);
+        ImGui::TableNextRow(ImGuiTableRowFlags_None, 6 * scale);   // a gap between the machine and the frames
         perf_label(UI_MENU_OV_FPS_LABEL, fps_c);
         perf_cell(UI_MENU_OV_FMT_FPS, s.fps);
         perf_cell(UI_MENU_OV_LOW1, s.low1_fps);
