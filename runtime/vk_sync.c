@@ -18,6 +18,7 @@
 #include "gfx.h"
 #include "host.h"
 #include "nvn_api.h"
+#include "platform/platform.h"
 #include "vk.h"
 
 #define WEAK __attribute__((weak))
