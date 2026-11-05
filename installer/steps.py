@@ -1,4 +1,4 @@
-"""The six setup steps of docs/installer.md: check, extract, lift, compile, prepare, cleanup.
+"""The setup steps of docs/installer.md: check, extract, lift, compile, dlss, prepare, cleanup.
 
 Extraction runs in this process through tools/extract.py (the package's sibling tools/, which ships with it); lift,
 compile and prepare run the bundled Python on recomp/gen.py, tools/build_game.py, tools/make_romfs_patches.py and
@@ -259,6 +259,7 @@ class Check(Step):
         if os.environ.get(HOST_CHECKED) == '1':
             # The container of kingdom-setup.sh sees no GPU; the script ran this probe on the host before.
             ctx.reporter.log('host: checked by kingdom-setup.sh on the host')
+            ctx.host = {'x86_64_v3': True, 'loader': True, 'devices': []}
             return
         layout, work = ctx.layout, ctx.temp / 'check'
         work.mkdir(parents=True, exist_ok=True)
@@ -443,7 +444,7 @@ class Check(Step):
             ctx.reporter.log(f'check: update {found} (recorded {game_version(ctx)})')
             ctx.state['version'] = found
             ctx.keys = {}
-            ctx.plan(ctx.forced | {'extract', 'lift', 'compile', 'prepare'})
+            ctx.plan(ctx.forced | {'extract', 'lift', 'compile', 'dlss', 'prepare'})
         ctx.state['version'] = found
 
 
@@ -660,10 +661,15 @@ class Compile(Step):
         return {'exe_sha256': file_sha256(dest / exe.name)}
 
 
-# ---- 5. prepare
+# ---- 6. prepare
 
 TRANSLATED = re.compile(r'gfx_shader: prepare: (\d+) of (\d+) pairs')
 ASPECT_SIZES = ('2560x1080', '3440x1440', '3840x1600', '5120x2160')
+
+
+def defer_shader_gpu_prepare():
+    """Linux AppImage and kingdom-setup.sh: seeds in the GUI, totk --prepare-shaders on the host. Never on Windows."""
+    return os.environ.get(PENDING_SHADERS) and os.name != 'nt'
 
 
 class Prepare(Step):
@@ -674,21 +680,37 @@ class Prepare(Step):
         xlate_id = layout.xlate.with_suffix('.id')
         tools = [layout.tools / n for n in ('prepare_shaders.py', 'shader_census.py', 'make_romfs_patches.py',
                                             'pack_shader_cache.py', 'ultrawide_layout.py')]
-        return fingerprint('prepare-3', ctx.keys['compile'], layout.xlate, xlate_id, shader_list_text(layout), *tools)
+        return fingerprint('prepare-4', ctx.keys['compile'], ctx.keys.get('dlss', ''), layout.xlate, xlate_id,
+                           shader_list_text(layout), *tools)
 
     @staticmethod
     def done_file():
-        """What the seed step leaves: the translation (totk --prepare-shaders) needs the GPU, which the container of
-        kingdom-setup.sh lacks, so there it writes the seed files and the script translates on the host."""
-        return 'seed-answers.bin' if os.environ.get(PENDING_SHADERS) else 'shader-prepared.bin'
+        """What the seed step leaves when GPU prepare is deferred; otherwise shader-prepared.bin from totk.exe."""
+        return 'seed-answers.bin' if defer_shader_gpu_prepare() else 'shader-prepared.bin'
+
+    @staticmethod
+    def inline_prepare_done(dest):
+        """Windows and a full Linux prepare: translation, driver warm-up, and shader-cache.pack."""
+        if not (dest / 'shader-prepared.bin').is_file():
+            return False
+        pack = dest / 'shader-cache' / 'shader-cache.pack'
+        if pack.is_file():
+            return True
+        cache = dest / 'shader-cache'
+        return cache.is_dir() and any(cache.iterdir())
 
     def current(self, ctx, record):
         dest = ctx.dest
         xlate = dest / ctx.layout.xlate.name
         aspect_ok = game_version(ctx) != '1.4.3' or all((dest / f'romfs-patches-{s}' / 'manifest.tsv').is_file()
                                                         for s in ASPECT_SIZES)
-        return ((dest / self.done_file()).is_file() and (dest / 'romfs-patches' / 'manifest.tsv').is_file() and aspect_ok
-                and xlate.is_file() and file_sha256(xlate) == record.get('xlate_sha256'))
+        patches_ok = (dest / 'romfs-patches' / 'manifest.tsv').is_file() and aspect_ok
+        xlate_ok = xlate.is_file() and file_sha256(xlate) == record.get('xlate_sha256')
+        if defer_shader_gpu_prepare():
+            shaders_ok = (dest / 'seed-answers.bin').is_file()
+        else:
+            shaders_ok = self.inline_prepare_done(dest)
+        return shaders_ok and patches_ok and xlate_ok
 
     def run(self, ctx):
         layout, rep, dest = ctx.layout, ctx.reporter, ctx.dest
@@ -735,7 +757,7 @@ class Prepare(Step):
                 rep.progress('prepare', 'libraries', force=True)
 
         rep.progress('prepare', 'seed', force=True)
-        pending = os.environ.get(PENDING_SHADERS)
+        pending = defer_shader_gpu_prepare()
         code, log = run_tool(ctx, 'prepare', layout.tools / 'prepare_shaders.py',
                              [dest, '--version', version_tag(game_version(ctx)), '--romfs', dest / 'romfs', '--exefs',
                               dest / 'exefs', '--list', shader_list, *(['--no-run'] if pending else [])], parse)
@@ -814,8 +836,15 @@ class Dlss(Step):
     def current(self, ctx, record):
         if record.get('failed'):
             return False
-        return not record.get('installed') or ((ctx.dest / DLSS_FILE).is_file() and
-                                                (ctx.dest / DLSS_LICENSE_FILE).is_file())
+        if record.get('skipped'):
+            return True
+        if record.get('kept'):
+            return (ctx.dest / DLSS_FILE).is_file()
+        target, license_target = ctx.dest / DLSS_FILE, ctx.dest / DLSS_LICENSE_FILE
+        if record.get('installed') == DLSS_VERSION:
+            return (target.is_file() and file_sha256(target) == DLSS_SHA256 and license_target.is_file() and
+                    file_sha256(license_target) == DLSS_LICENSE_SHA256)
+        return False
 
     def run(self, ctx):
         if not nvidia_rtx(getattr(ctx, 'host', None)):
@@ -877,4 +906,4 @@ class Dlss(Step):
 
 
 def all_steps():
-    return [Check(), Extract(), Lift(), Compile(), Prepare(), Dlss(), Cleanup()]
+    return [Check(), Extract(), Lift(), Compile(), Dlss(), Prepare(), Cleanup()]

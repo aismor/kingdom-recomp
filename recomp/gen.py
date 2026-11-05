@@ -39,6 +39,7 @@ sys.path.insert(0, str(ROOT / 'tools'))
 sys.path.insert(0, str(ROOT / 'recomp'))
 
 import flags  # noqa: E402
+import hostmem  # noqa: E402
 import jumptables  # noqa: E402
 import patches  # noqa: E402
 import regs  # noqa: E402
@@ -522,7 +523,8 @@ def _retry(fn, *args):
 _W = {}  # worker state: 'mods' {name: (path, base)}, 'starts' {name: sorted array}, 'emitters' {name: Emitter}
 
 
-def _worker_init(mods, starts, table, opts):
+def _worker_init(mods, starts, table, opts, jobs):
+    _W['jobs'] = jobs
     _W['mods'] = mods
     _W['starts'] = starts
     _W['patches'] = table
@@ -545,6 +547,9 @@ def _emit_chunk(task):
     """Worker: write one chunk. Returns its statistics."""
     name, number, path, fns = task
     t0 = time.perf_counter()
+    limit = os.environ.get('TOTK_LIFT_TEST_OOM_ABOVE')
+    if limit and _W['jobs'] > int(limit) and number % 2 == 1:
+        raise MemoryError
     e = _emitter(name)
     e.stats.clear()
     e.unsupported.clear()
@@ -587,12 +592,35 @@ def remove_stale(moddir, name, nchunks, errors):
     return removed
 
 
+WORKER_MEM = 1536 << 20
+MEM_SHARE = 0.8
+
+
+def pick_jobs(requested):
+    if requested:
+        return requested, '--jobs'
+    env = os.environ.get('TOTK_LIFT_JOBS', '').strip()
+    if env:
+        try:
+            if int(env) >= 1:
+                return int(env), 'TOTK_LIFT_JOBS'
+        except ValueError:
+            pass
+        print(f'ignoring TOTK_LIFT_JOBS={env!r}: not a positive integer', file=sys.stderr, flush=True)
+    cpus = os.cpu_count() or 4
+    free = hostmem.available_ram()
+    if free is None:
+        return cpus, f'{cpus} CPUs, free memory unknown'
+    by_mem = max(1, int(free * MEM_SHARE) // WORKER_MEM)
+    return min(cpus, by_mem), f'{cpus} CPUs, {free / 2**30:.1f} GiB free memory allows {by_mem}'
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('--exefs', type=Path, required=True)
     ap.add_argument('--out', type=Path, required=True)
     ap.add_argument('--modules', default='main,subsdk0,sdk')
-    ap.add_argument('--jobs', type=int, default=os.cpu_count() or 4)
+    ap.add_argument('--jobs', type=int, help='emit workers (default: by free memory and CPU count)')
     ap.add_argument('--limit', type=int, default=0, help='emit only the first N functions of each module')
     ap.add_argument('--chunk-fns', type=int, default=3000, help='functions per chunk at most')
     ap.add_argument('--chunk-bytes', type=int, default=3000000, help='estimated bytes of C per chunk')
@@ -651,15 +679,31 @@ def main():
     done_at, errors = {}, []
     t_emit = time.perf_counter()
     ctx = mp.get_context('spawn')
-    with ctx.Pool(max(1, args.jobs), initializer=_worker_init, initargs=(paths, starts_abs, table, opts)) as pool:
-        for i, r in enumerate(pool.imap_unordered(_emit_chunk, [t for _, t in tasks], chunksize=1)):
-            results[r['module']].append(r)
-            if r['error']:
-                errors.append(r['error'])
-            done_at[r['module']] = time.perf_counter() - t_emit
-            if (i + 1) % 200 == 0 or i + 1 == len(tasks):
-                print(f'emitted {i + 1}/{len(tasks)} chunks, {time.perf_counter() - t_emit:.0f}s', file=sys.stderr,
-                      flush=True)
+    jobs, why = pick_jobs(args.jobs)
+    pending = [t for _, t in tasks]
+    emitted = 0
+    while True:
+        print(f'emitting with {jobs} workers ({why})', file=sys.stderr, flush=True)
+        try:
+            with ctx.Pool(jobs, initializer=_worker_init, initargs=(paths, starts_abs, table, opts, jobs)) as pool:
+                for r in pool.imap_unordered(_emit_chunk, pending, chunksize=1):
+                    results[r['module']].append(r)
+                    if r['error']:
+                        errors.append(r['error'])
+                    done_at[r['module']] = time.perf_counter() - t_emit
+                    emitted += 1
+                    if emitted % 200 == 0 or emitted == len(tasks):
+                        print(f'emitted {emitted}/{len(tasks)} chunks, {time.perf_counter() - t_emit:.0f}s',
+                              file=sys.stderr, flush=True)
+            break
+        except MemoryError:
+            if jobs == 1:
+                raise
+            smaller = jobs // 2
+            print(f'emit: out of memory with {jobs} workers, retrying with {smaller}', file=sys.stderr, flush=True)
+            jobs, why = smaller, 'after out of memory'
+            done = {(r['module'], r['number']) for rs in results.values() for r in rs}
+            pending = [t for t in pending if (t[0], t[1]) not in done]
 
     for name, d in info.items():
         rs = sorted(results[name], key=lambda r: r['number'])

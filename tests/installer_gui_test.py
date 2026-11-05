@@ -38,7 +38,7 @@ INSTALLED = ROOT / 'build' / 'install-test'
 FIXTURE = ROOT / 'build' / 'inst-gui' / 'e2e-install'
 COPIED = ('totk.ini', statefile.NAME)   # written by a run, so never linked
 START = {'type': 'start', 'release': 'r1', 'mode': 'install', 'dest': 'D:\\T', 'log': 'D:\\T.log',
-         'steps': ['check', 'extract', 'lift', 'compile', 'prepare', 'cleanup']}
+         'steps': ['check', 'extract', 'lift', 'compile', 'dlss', 'prepare', 'cleanup']}
 
 
 def fold(*events):
@@ -66,7 +66,7 @@ class ModelTest(unittest.TestCase):
         m = fold(START, {'type': 'plan', 'run': ['check', 'extract'], 'skip': {'lift': 'current', 'compile': 'current'}},
                  {'type': 'step', 'step': 'check', 'state': 'started'})
         self.assertEqual([m.states[s] for s in m.steps],
-                         [RUNNING, PENDING, SKIPPED, SKIPPED, PENDING, PENDING])
+                         [RUNNING, PENDING, SKIPPED, SKIPPED, PENDING, PENDING, PENDING])
         self.assertEqual(m.current, 'check')
         m.apply({'type': 'step', 'step': 'check', 'state': 'done', 'seconds': 1.0})
         self.assertEqual(m.states['check'], DONE)
@@ -138,10 +138,12 @@ class ModelTest(unittest.TestCase):
 
 class RunStatesTest(unittest.TestCase):
     OK = [START, {'type': 'plan', 'run': ['check', 'extract'], 'skip': {'lift': 'current', 'compile': 'current',
-                                                                     'prepare': 'current', 'cleanup': 'not_needed'}},
+                                                                     'dlss': 'current', 'prepare': 'current',
+                                                                     'cleanup': 'not_needed'}},
           {'type': 'step', 'step': 'check', 'state': 'started'}, {'type': 'step', 'step': 'check', 'state': 'done'},
           {'type': 'step', 'step': 'extract', 'state': 'started'}, {'type': 'step', 'step': 'extract', 'state': 'done'},
           {'type': 'step', 'step': 'lift', 'state': 'skipped'}, {'type': 'step', 'step': 'compile', 'state': 'skipped'},
+          {'type': 'step', 'step': 'dlss', 'state': 'skipped'},
           {'type': 'step', 'step': 'prepare', 'state': 'skipped'}, {'type': 'step', 'step': 'cleanup', 'state': 'done'},
           {'type': 'end', 'result': 'ok', 'seconds': 1}]
     FAILED = [START, {'type': 'step', 'step': 'check', 'state': 'started'}, {'type': 'step', 'step': 'check', 'state': 'done'},
@@ -244,7 +246,7 @@ class CatalogTest(unittest.TestCase):
         cat = Catalog('en')
         ids = ['ui.' + n for n in ('title', 'start', 'cancel', 'open_folder', 'notice', 'space_one', 'space_two',
                                    'process_died', 'result_ok', 'result_failed', 'result_cancelled')]
-        ids += [f'step.{s}' for s in ('check', 'extract', 'lift', 'compile', 'prepare', 'cleanup')]
+        ids += [f'step.{s}' for s in ('check', 'extract', 'lift', 'compile', 'dlss', 'prepare', 'cleanup')]
         ids += ['ui.state_' + n for n in ('started', 'done', 'skipped', 'pending', 'running', 'failed')]
         for lang in ('en', 'ru'):
             cat.set_language(lang)

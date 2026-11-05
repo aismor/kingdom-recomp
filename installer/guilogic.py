@@ -26,7 +26,7 @@ from .events import for_platform, render
 
 TEXT = Path(__file__).resolve().parent / 'text'
 UI_LANGUAGES = ('en', 'ru', 'pt')
-STEP_ORDER = ('check', 'extract', 'lift', 'compile', 'prepare', 'cleanup')
+STEP_ORDER = ('check', 'extract', 'lift', 'compile', 'dlss', 'prepare', 'cleanup')
 # message parameter -> catalog id prefix of the names that replace its raw values
 PARAM_NAMES = {'lang': 'lang.', 'known': 'lang.', 'step': 'step.', 'input': 'param.input.'}
 LANG_RU = 0x19   # primary language id of Russian in a Windows LANGID

@@ -100,7 +100,7 @@ LLVM_SKIP_DIRS = {'aarch64-w64-mingw32', 'armv7-w64-mingw32', 'i686-w64-mingw32'
 LLVM_SKIP_SUFFIXES = {'.idl', '.tlb'}
 
 # tools/ files the installer steps run (and what they import), copied from the repo.
-TOOLS_FILES = ['build_game.py', 'build_shaders.py', 'check_content.py', 'extract.py', 'host_platform.py',
+TOOLS_FILES = ['build_game.py', 'build_shaders.py', 'check_content.py', 'extract.py', 'host_platform.py', 'hostmem.py',
                'make_romfs_patches.py', 'pack_shader_cache.py', 'prepare_shaders.py', 'romfs_index.py', 'shader_census.py',
                'ultrawide_layout.py',
                'shader_list.py']
