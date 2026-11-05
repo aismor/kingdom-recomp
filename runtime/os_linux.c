@@ -596,7 +596,7 @@ typedef struct OsThread {
     uint32_t kind; /* 'THRD' */
     pthread_t tid;
     sem_t done;
-    int detached;
+    volatile int refs;   // the Windows handle and the running pthread each own one
     LPTHREAD_START_ROUTINE fn;
     void *arg;
     DWORD id;
@@ -654,10 +654,17 @@ static int handle_is_kind(HANDLE h, uint32_t kind) {
 
 static DWORD next_tid = 1;
 
+static void thread_release(OsThread *t) {
+    if (__sync_sub_and_fetch(&t->refs, 1)) return;
+    sem_destroy(&t->done);
+    free(t);
+}
+
 static void *thread_trampoline(void *p) {
     OsThread *t = p;
     t->fn(t->arg);
-    if (!t->detached) sem_post(&t->done);
+    sem_post(&t->done);
+    thread_release(t);
     return NULL;
 }
 
@@ -671,11 +678,13 @@ HANDLE CreateThread(void *sec, SIZE_T stack, LPTHREAD_START_ROUTINE fn, void *ar
     t->fn = fn;
     t->arg = arg;
     t->id = __sync_fetch_and_add(&next_tid, 1);
+    t->refs = 2;
     sem_init(&t->done, 0, 0);
     pthread_attr_t attr;
     pthread_attr_init(&attr);
     if (stack) pthread_attr_setstacksize(&attr, stack);
     if (pthread_create(&t->tid, &attr, thread_trampoline, t)) {
+        sem_destroy(&t->done);
         free(t);
         return NULL;
     }
@@ -688,8 +697,8 @@ BOOL CloseHandle(HANDLE h) {
     if (!h) return FALSE;
     if (handle_is_kind(h, OS_KIND_THREAD)) {
         OsThread *t = h;
-        if (!t->detached) sem_destroy(&t->done);
-        free(t);
+        pthread_detach(t->tid);
+        thread_release(t);
         return TRUE;
     }
     if (handle_is_kind(h, OS_KIND_SEM)) {
