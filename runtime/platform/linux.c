@@ -16,6 +16,7 @@
 #include <sys/utsname.h>
 #include <sys/wait.h>
 #include <signal.h>
+#include <spawn.h>
 
 #include "../os.h"
 #include "platform.h"
@@ -482,8 +483,10 @@ struct PlatChild {
     int in_w, out_r;
 };
 
+extern char **environ;
+
 PlatChild *plat_child_start(const char *exe_in, const char *arg, uint32_t *err) {
-    (void)err;
+    if (err) *err = 0;
     char host_exe[4096];
     os_host_path(exe_in, host_exe, sizeof host_exe);
     const char *exe = host_exe;
@@ -492,23 +495,31 @@ PlatChild *plat_child_start(const char *exe_in, const char *arg, uint32_t *err) 
     int inpipe[2], outpipe[2];
     if (pipe2(inpipe, O_CLOEXEC)) return NULL;
     if (pipe2(outpipe, O_CLOEXEC)) return close(inpipe[0]), close(inpipe[1]), NULL;
-    pid_t pid = fork();
-    if (pid < 0) return NULL;
-    if (pid == 0) {
-        dup2(inpipe[0], STDIN_FILENO);
-        dup2(outpipe[1], STDOUT_FILENO);
-        close(inpipe[0]);
-        close(inpipe[1]);
-        close(outpipe[0]);
-        close(outpipe[1]);
-        if (arg) {
-            execl(exe, exe, arg, (char *)NULL);
-        } else execl(exe, exe, (char *)NULL);
-        _exit(127);
-    }
+    posix_spawn_file_actions_t fa;
+    posix_spawn_file_actions_init(&fa);
+    posix_spawn_file_actions_adddup2(&fa, inpipe[0], STDIN_FILENO);
+    posix_spawn_file_actions_adddup2(&fa, outpipe[1], STDOUT_FILENO);
+    posix_spawn_file_actions_addopen(&fa, STDERR_FILENO, "/dev/null", O_WRONLY, 0);
+    char *argv[] = {(char *)exe, (char *)arg, NULL};
+    pid_t pid;
+    int e = posix_spawn(&pid, exe, &fa, NULL, argv, environ);
+    posix_spawn_file_actions_destroy(&fa);
     close(inpipe[0]);
     close(outpipe[1]);
+    if (e) {
+        close(inpipe[1]);
+        close(outpipe[0]);
+        if (err) *err = (uint32_t)e;
+        return NULL;
+    }
     PlatChild *c = malloc(sizeof *c);
+    if (!c) {
+        kill(pid, SIGKILL);
+        waitpid(pid, NULL, 0);
+        close(inpipe[1]);
+        close(outpipe[0]);
+        return NULL;
+    }
     c->pid = pid;
     c->in_w = inpipe[1];
     c->out_r = outpipe[0];
