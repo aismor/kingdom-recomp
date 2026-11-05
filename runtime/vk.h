@@ -51,7 +51,8 @@ typedef struct VkCtx {
     int has_custom_border_color, has_eds, has_eds2, has_eds3, has_vertex_input_dynamic_state,
         has_conditional_rendering, has_transform_feedback, has_provoking_vertex, has_device_fault, has_memory_budget,
         has_robustness2, has_buffer_device_address, has_fragment_shader_interlock,
-        has_astc_ldr, has_hdr_metadata;       // VK_EXT_hdr_metadata (vk_hdr.c vk_hdr_metadata)
+        has_astc_ldr, has_hdr_metadata,       // VK_EXT_hdr_metadata (vk_hdr.c vk_hdr_metadata)
+        has_calibrated;                       // KHR/EXT calibrated timestamps (GPU idle split in the perf log)
     // Feedback loops (maxwell.md 1.9, vk_exec_draw.c feedback_prepare): a draw samples a target of its open pass that
     // an earlier draw of the pass wrote. TOTK_FEEDBACK=0: VK_FEEDBACK_OFF (sampled in GENERAL without a barrier, the
     // old behaviour); VK_FEEDBACK_LAYOUT with VK_EXT_attachment_feedback_loop_layout and dynamicRenderingLocalRead
