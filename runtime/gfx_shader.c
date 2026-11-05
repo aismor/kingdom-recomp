@@ -1460,6 +1460,21 @@ static DWORD WINAPI xlate_worker(void *arg) {
     }
     return 0;
 }
+
+// X.lock held. Start these during boot when possible: creating the first workers from a live replay caused a visible
+// pause on Linux even though the translation itself runs asynchronously.
+static void xlate_workers_start(void) {
+    if (X.started) return;
+    int n = 0;
+    for (int i = 0; i < svc_runtime_limit(); i++) {
+        HANDLE t = CreateThread(NULL, 0, xlate_worker, NULL, 0, NULL);
+        if (t) CloseHandle(t), n++;
+    }
+    X.started = n ? 1 : -1;
+    if (n) rt_log("gfx_shader: graphics shaders are translated by %d background workers (TOTK_XLATE_PROCS)", n);
+    else rt_log("gfx_shader: cannot start the translation workers; translating synchronously");
+}
+
 const GfxShader *gfx_shader_get_async(int stage, const uint8_t *control, const uint8_t *code, uint64_t code_size,
                                       const GfxShaderAnswers *a, int *pending) {
     *pending = 0;
@@ -1487,16 +1502,7 @@ static const GfxShader *get_async_one(Req r, int stage, const uint8_t *control, 
     XWait *e = calloc(1, sizeof *e);
     uint8_t *ctl = malloc(CONTROL_SIZE), *cd = malloc(r.length);
     AcquireSRWLockExclusive(&X.lock);
-    if (!X.started) {
-        int n = 0;
-        for (int i = 0; i < svc_runtime_limit(); i++) {
-            HANDLE t = CreateThread(NULL, 0, xlate_worker, NULL, 0, NULL);
-            if (t) CloseHandle(t), n++;
-        }
-        X.started = n ? 1 : -1;
-        if (n) rt_log("gfx_shader: graphics shaders are translated by %d background workers (TOTK_XLATE_PROCS)", n);
-        else rt_log("gfx_shader: cannot start the translation workers; translating synchronously");
-    }
+    xlate_workers_start();
     XWait **slot = wait_slot(r.key);
     int raced = *slot != NULL;                             // another thread queued it between the checks
     int queued = !raced && X.started == 1 && j && e && ctl && cd;
@@ -1691,6 +1697,9 @@ void gfx_shader_prewarm(const uint8_t (*iids)[32], size_t n, const GfxShader **o
     }
     for (int i = 0; i < k; i++) CloseHandle(t[i]);
     svc_set_limit(svc_runtime_limit());
+    AcquireSRWLockExclusive(&X.lock);
+    xlate_workers_start();
+    ReleaseSRWLockExclusive(&X.lock);
     rt_log("gfx_shader: prewarm: %zu shaders named by pipeline keys (%ld not available), %zu other stored inputs (%ld "
            "cached); %llu translated, %llu failed, with up to %d translators and %d threads, in %.0f ms", w.n_named,
            (long)w.missing, w.n_other, (long)w.other_cached, (unsigned long long)((uint64_t)n_xlated - xl0),

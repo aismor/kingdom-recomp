@@ -64,7 +64,8 @@ class Fake(runner.Step):
 
 def fake_steps():
     return [Fake('check', always=True), Fake('extract'), Fake('lift', transient=True, previous='extract'),
-            Fake('compile', previous='lift'), Fake('prepare', previous='compile'), Fake('cleanup', always=True)]
+            Fake('compile', previous='lift'), Fake('dlss', previous='compile'), Fake('prepare', previous='dlss'),
+            Fake('cleanup', always=True)]
 
 
 class Bed:
@@ -96,7 +97,7 @@ class Bed:
         return {e['step']: e['reason'] for e in r.events if e['type'] == 'step' and e['state'] == 'skipped'}
 
 
-ALL = ['check', 'extract', 'lift', 'compile', 'prepare', 'cleanup']
+ALL = ['check', 'extract', 'lift', 'compile', 'dlss', 'prepare', 'cleanup']
 
 
 class RunnerTest(unittest.TestCase):
@@ -110,7 +111,7 @@ class RunnerTest(unittest.TestCase):
     def test_fresh_install_runs_everything_and_records_it(self):
         r = self.bed.run()
         self.assertEqual((r.result, r.mode, r.ran), ('ok', 'install', ALL))
-        self.assertEqual(set(r.state['steps']), {'extract', 'lift', 'compile', 'prepare'})
+        self.assertEqual(set(r.state['steps']), {'extract', 'lift', 'compile', 'dlss', 'prepare'})
         self.assertEqual(r.state['steps']['compile']['note'], 'compile')
         self.assertEqual(r.state['release'], '1.0')
         started = [e['step'] for e in r.events if e['type'] == 'step' and e['state'] == 'started']
@@ -122,7 +123,7 @@ class RunnerTest(unittest.TestCase):
         r = self.bed.run()
         self.assertEqual((r.result, r.mode, r.ran), ('ok', 'resume', ['check', 'cleanup']))
         self.assertEqual(self.bed.skipped(r), {'extract': 'current', 'lift': 'not_needed', 'compile': 'current',
-                                               'prepare': 'current'})
+                                               'dlss': 'current', 'prepare': 'current'})
         self.assertEqual(r.verified, [])   # same release: no full checks
 
     def test_resume_after_failure(self):
@@ -133,7 +134,7 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(set(r.state['steps']), {'extract', 'lift'})
         r = self.bed.run()
         # lift's output is still in the temp folder (no cleanup ran), so only compile and later run.
-        self.assertEqual((r.result, r.mode, r.ran), ('ok', 'resume', ['check', 'compile', 'prepare', 'cleanup']))
+        self.assertEqual((r.result, r.mode, r.ran), ('ok', 'resume', ['check', 'compile', 'dlss', 'prepare', 'cleanup']))
 
     def test_resume_after_cancel_with_transient_output_gone(self):
         r = self.bed.run(fail={'prepare': 'cancel'})
@@ -160,7 +161,7 @@ class RunnerTest(unittest.TestCase):
         self.bed.run(release='1.0')
         r = self.bed.run(release='1.1', inputs={'lift': 'v2'})
         self.assertEqual((r.result, r.mode), ('ok', 'update'))
-        self.assertEqual(r.ran, ['check', 'lift', 'compile', 'prepare', 'cleanup'])
+        self.assertEqual(r.ran, ['check', 'lift', 'compile', 'dlss', 'prepare', 'cleanup'])
         self.assertEqual(r.verified, ['extract'])   # kept from another release: full check
         self.assertEqual(r.state['steps']['extract']['release'], '1.0')
         self.assertEqual(r.state['steps']['compile']['release'], '1.1')
@@ -170,7 +171,7 @@ class RunnerTest(unittest.TestCase):
         self.bed.run(release='1.0')
         r = self.bed.run(release='1.1')
         self.assertEqual(r.ran, ['check', 'cleanup'])
-        self.assertEqual(r.verified, ['extract', 'compile', 'prepare'])
+        self.assertEqual(r.verified, ['extract', 'compile', 'dlss', 'prepare'])
 
     def test_update_with_changed_kept_files_extracts_again(self):
         self.bed.run(release='1.0')
@@ -183,7 +184,7 @@ class RunnerTest(unittest.TestCase):
     def test_verify_option_checks_same_release(self):
         self.bed.run()
         r = self.bed.run(verify=True)
-        self.assertEqual(r.verified, ['extract', 'compile', 'prepare'])
+        self.assertEqual(r.verified, ['extract', 'compile', 'dlss', 'prepare'])
 
     def test_state_errors(self):
         self.bed.dest.mkdir()

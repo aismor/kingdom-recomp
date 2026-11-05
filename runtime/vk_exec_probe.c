@@ -241,7 +241,7 @@ static int test_clear(const GfxBackend *b, uint8_t *guest, int *n_inside) {
 }
 
 // ---- draw part: the pipeline self-test, then a hand-built stream that clears an RGBA8 target, binds a census
-// vertex + fragment pair and draws one triangle; a census compute shader is dispatched. The census (build/v121/shaders,
+// vertex + fragment pair and draws one triangle; a census compute shader is dispatched. The census (build/v143/shaders,
 // tools/shader_census.py) is read the way vk_pipeline_selftest reads it: a pair is a fragment shader and a vertex
 // shader of the same source file.
 
@@ -316,7 +316,7 @@ static int dr_root(char *root, size_t n) {
     for (char *cut = strrchr(exe, '\\'); cut; cut = strrchr(exe, '\\')) {
         *cut = 0;
         char p[MAX_PATH * 2 + 40];
-        snprintf(p, sizeof p, "%s\\build\\v121\\shaders\\jobs.json", exe);
+        snprintf(p, sizeof p, "%s\\build\\v143\\shaders\\jobs.json", exe);
         if (GetFileAttributesA(p) != INVALID_FILE_ATTRIBUTES) return snprintf(root, n, "%s", exe) < (int)n;
     }
     return 0;
@@ -331,7 +331,7 @@ static prog_t *dr_prog(const char *root, const DrawEnt *e[], int n) {
     p->magic = NVN_PROG_MAGIC, p->serial = ++serial;
     for (int i = 0; i < n; i++) {
         char path[MAX_PATH * 2 + 128];
-        snprintf(path, sizeof path, "%s\\build\\v121\\shaders\\code\\%.64s.code", root, e[i]->key);
+        snprintf(path, sizeof path, "%s\\build\\v143\\shaders\\code\\%.64s.code", root, e[i]->key);
         long body;
         char *raw = dr_read(path, &body);
         if (!raw) return free(p), NULL;
@@ -397,8 +397,8 @@ static uint8_t *draw_prefix(uint8_t *q, prog_t *prog, const pool_t *pool, tex_t 
 
 static int test_draw(const GfxBackend *b, uint8_t *guest, int *n_drawn, int *n_tries, int *n_cs) {
     char root[MAX_PATH * 2], path[MAX_PATH * 2 + 64];
-    CHECK(dr_root(root, sizeof root), "build/v121/shaders/jobs.json not found");
-    snprintf(path, sizeof path, "%s\\build\\v121\\shaders\\jobs.json", root);
+    CHECK(dr_root(root, sizeof root), "build/v143/shaders/jobs.json not found");
+    snprintf(path, sizeof path, "%s\\build\\v143\\shaders\\jobs.json", root);
     long size;
     char *jobs = dr_read(path, &size);
     DrawEnt *e = malloc(sizeof *e * 20000);
@@ -812,6 +812,8 @@ static int test_nvnx(const GfxBackend *b, uint8_t *guest, int *bytes) {
 static int test_mirror(const GfxBackend *b, uint8_t *guest, int *bytes) {
     *bytes = 0;
     if (!vk_mirror_on) return 0;
+    int fl_bad = vk_mem_flush_add_probe();
+    CHECK(!fl_bad, "flush range list check %d failed", fl_bad);
     pool_t pool = {.magic = NVN_POOL_MAGIC, .flags = 0x22, .mem = guest + 0xC00000, .size = 0x100000,
                    .game_mem = guest + 0xC00000};
     CHECK(b->pool_init(&pool), "pool_init of a CPU-visible pool for the mirror part");

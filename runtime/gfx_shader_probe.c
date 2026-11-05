@@ -1,5 +1,5 @@
 // --probe-shader: the shader service client (gfx_shader.c) against 32 census shaders. Needs build/xlate/totk_xlate.exe and
-// build/v121/shaders/ (tools/shader_census.py); uses a throwaway cache directory.
+// build/v143/shaders/ (tools/shader_census.py); uses a throwaway cache directory.
 //   1. Translate 32 shaders (mixed stages) through gfx_shader_get; each SPIR-V starts with the magic 0x07230203.
 //   2. Drop the memory cache and ask again: 32 hits from disk, 0 service requests. A third pass returns the same pointers.
 //   3. Send a malformed line straight to the service: it answers with an error line and still serves a valid request.
@@ -48,7 +48,7 @@ static const char *str_field(const char *from, const char *to, const char *name,
 
 static int hexval(char c) { return c <= '9' ? c - '0' : (c | 32) - 'a' + 10; }
 
-// The repository root: the nearest parent of totk.exe holding build/v121/shaders/jobs.json.
+// The repository root: the nearest parent of totk.exe holding build/v143/shaders/jobs.json.
 static int find_root(char *root, size_t n) {
     char exe[MAX_PATH * 2];
     DWORD len = GetModuleFileNameA(NULL, exe, sizeof exe);
@@ -56,7 +56,7 @@ static int find_root(char *root, size_t n) {
     for (char *cut = strrchr(exe, '\\'); cut; cut = strrchr(exe, '\\')) {
         *cut = 0;
         char p[MAX_PATH * 2 + 40];
-        snprintf(p, sizeof p, "%s\\build\\v121\\shaders\\jobs.json", exe);
+        snprintf(p, sizeof p, "%s\\build\\v143\\shaders\\jobs.json", exe);
         if (GetFileAttributesA(p) != INVALID_FILE_ATTRIBUTES) return snprintf(root, n, "%s", exe) < (int)n;
     }
     return 0;
@@ -103,7 +103,7 @@ static const GfxShader *translate(const Entry *e, int *err) {
     uint8_t c1[8192], control[0x880] = {0};
     if (e->c1_len > sizeof c1) return *err = 1, NULL;
     for (size_t b = 0; b < e->c1_len; b++) c1[b] = (uint8_t)(hexval(e->c1[b * 2]) << 4 | hexval(e->c1[b * 2 + 1]));
-    snprintf(path, sizeof path, "%s\\build\\v121\\shaders\\code\\%s.code", root, e->key);
+    snprintf(path, sizeof path, "%s\\build\\v143\\shaders\\code\\%s.code", root, e->key);
     size_t body_size;
     char *body = slurp(path, &body_size);
     if (!body) return *err = 1, NULL;
@@ -140,8 +140,8 @@ static void remove_dir(const char *dir) {
 
 int probe_shader(void) {
     char path[MAX_PATH * 2 + 64];
-    CHECK(find_root(root, sizeof root), "build/v121/shaders/jobs.json not found (run tools/shader_census.py)");
-    snprintf(path, sizeof path, "%s\\build\\v121\\shaders\\jobs.json", root);
+    CHECK(find_root(root, sizeof root), "build/v143/shaders/jobs.json not found (run tools/shader_census.py)");
+    snprintf(path, sizeof path, "%s\\build\\v143\\shaders\\jobs.json", root);
     size_t jobs_size;
     char *jobs = slurp(path, &jobs_size);
     CHECK(jobs, "cannot read %s", path);
@@ -203,13 +203,27 @@ int probe_shader(void) {
     *o = 0;
     char esc_root[MAX_PATH * 2];
     o = esc_root;
-    for (const char *s = root; *s; s++) { if (*s == '\\') *o++ = '\\'; *o++ = *s; }
+    for (const char *s = root; *s; s++) {
+#ifdef __linux__
+        *o++ = *s == '\\' ? '/' : *s;
+#else
+        if (*s == '\\') *o++ = '\\';
+        *o++ = *s;
+#endif
+    }
     *o = 0;
     const Entry *e = &entries[0];
+#ifdef __linux__
     snprintf(line, sizeof line,
-             "{\"job\":{\"key\":\"%.64sa\",\"stage\":\"%s\",\"debug\":false,\"c1\":\"%.*s\",\"code\":\"%s\\\\build\\\\v121\\\\shaders\\\\code\\\\%.64s.code\"},\"out\":\"%s\"}",
+             "{\"job\":{\"key\":\"%.64sa\",\"stage\":\"%s\",\"debug\":false,\"c1\":\"%.*s\",\"code\":\"%s/build/v143/shaders/code/%.64s.code\"},\"out\":\"%s\"}",
              e->key, e->stage == GFX_STAGE_VS ? "vs" : e->stage == GFX_STAGE_FS ? "ps" : "cs", (int)(e->c1_len * 2), e->c1,
              esc_root, e->key, dir_json);
+#else
+    snprintf(line, sizeof line,
+             "{\"job\":{\"key\":\"%.64sa\",\"stage\":\"%s\",\"debug\":false,\"c1\":\"%.*s\",\"code\":\"%s\\\\build\\\\v143\\\\shaders\\\\code\\\\%.64s.code\"},\"out\":\"%s\"}",
+             e->key, e->stage == GFX_STAGE_VS ? "vs" : e->stage == GFX_STAGE_FS ? "ps" : "cs", (int)(e->c1_len * 2), e->c1,
+             esc_root, e->key, dir_json);
+#endif
     FAIL_IF(!gfx_shader_raw_request(line, reply, sizeof reply), "service did not answer a valid request after the malformed one");
     FAIL_IF(strncmp(reply, "ok ", 3), "valid request after the malformed one answered \"%s\"", reply);
 

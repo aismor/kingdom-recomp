@@ -99,6 +99,10 @@ int nvn_handle_live(uint64_t handle);                      // 1 while the handle
                                                            // not added again)
 uint64_t nvn_handle_bytes(uint64_t handle);                // bytes of the copy, OP_BEGIN to OP_END; 0 if not live
 uint64_t nvn_submit_count(void);                           // QueueSubmitCommands calls so far
+// Texture pins remain for this many submits after their last recording reference disappears.
+#define NVN_PIN_AGE 1200
+void nvn_pins_sweep(uint64_t now, const tex_t *const *keep, int nkeep);
+void nvn_pins_stats(uint64_t *live, uint64_t *freed);
 const char *nvn_op_name(uint32_t op);                      // "DRAW_IDX", ...; "?" past OP_COUNT_
 // MemoryPoolInvalidateMappedRange: the CPU is about to read pool storage the GPU wrote. Weak no-op in nvn_ext.c; a back
 // end that renders into host-side copies defines it and writes them back.
