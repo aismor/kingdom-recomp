@@ -91,7 +91,12 @@ if not IS_WINDOWS:
     # Newer clang (the AppImage's LLVM) makes that mismatch an error; older clang and gcc only warn.
     RT_FLAGS.append('-Wno-error=incompatible-pointer-types')
 # The map feeds tools/prof_report.py. --stack is a PE option; an ELF main thread gets its stack from the rlimit.
-LINK_FLAGS = ['-fuse-ld=lld', *(['-Wl,--stack,16777216'] if IS_WINDOWS else []), '"-Wl,--Map=$builddir/totk.map"']
+# --call-graph-profile-sort=none: with a PGO profile the input objects carry call graph edges and lld would
+# interleave runtime objects between the generated modules' functions. The kernel requires the lifted modules'
+# functions to be one contiguous range (runtime/kernel.c ap_try checks a top-level rip against lo..hi), so the
+# link keeps the input order: main, subsdk0, sdk, runtime.
+LINK_FLAGS = ['-fuse-ld=lld', '-Wl,--call-graph-profile-sort=none',
+              *(['-Wl,--stack,16777216'] if IS_WINDOWS else []), '"-Wl,--Map=$builddir/totk.map"']
 LINK_LIBS = ['-lpsapi', '-lbcrypt', '-lvulkan-1', '-luser32', '-lgdi32', '-ldwmapi', '-lwinmm', '-lSDL3', '-lopus', '-l:libvpx.a', '-l:libzstd.a', '-l:libstdc++.a', '-l:libwinpthread.a']   # Vulkan back end; libvpx static (movies); libzstd static (resolution.c)
 VMA_INCLUDE = UCRT.parent / 'include' / 'vma'   # vk_mem_alloc.h; MSYS2 package vulkan-memory-allocator
 # --toolchain: an llvm-mingw tree. The libraries, headers and DLLs MSYS2 supplies come from the deps directory instead.
@@ -111,6 +116,7 @@ AR = UCRT / 'llvm-ar.exe'
 WINDRES = UCRT / 'windres.exe'   # runtime/totk.rc: the manifest of totk.exe
 TOOLCHAIN_BIN = None   # llvm-mingw bin directory, set by main() for --toolchain
 DEPS = None            # the deps directory of an llvm-mingw build
+PGO_INPUT = None       # --pgo FILE; an implicit dependency of every compiled object
 # tools/data/expected-<display version>.json for each build version name.
 DISPLAY_VERSIONS = {'v0': '1.0.0', 'v112': '1.1.2', 'v121': '1.2.1', 'v143': '1.4.3'}
 
@@ -119,6 +125,28 @@ GiB = 1 << 30
 # (295k-entry tables). 768 MiB leaves headroom for the largest file.
 JOB_MEM = 768 << 20
 MEM_BUDGET = 50 * GiB  # total for all compile jobs
+
+
+def set_pgo(pgo, out):
+    """Configure profile generation or profile-guided optimisation."""
+    global PGO_INPUT
+    GEN_FLAGS[GEN_FLAGS.index('-O1')] = '-O2'
+    names = ['-mllvm', '-static-func-full-module-prefix=false']
+    if pgo == 'gen':
+        flags = [f'-fprofile-generate={cmd_arg((out / "pgo").resolve().as_posix())}']
+        RT_FLAGS.append('-DTOTK_PGO_GEN')
+        LINK_FLAGS.append('-fprofile-generate')
+    else:
+        PGO_INPUT = Path(pgo).resolve()
+        if not PGO_INPUT.is_file():
+            sys.exit(f'--pgo {pgo}: no such profile')
+        flags = [f'-fprofile-use={cmd_path(PGO_INPUT)}', '-Wno-profile-instr-unprofiled',
+                 '-Wno-profile-instr-out-of-date', '-Wno-backend-plugin',
+                 # This fork identifies lifted code as one contiguous host range for asynchronous preemption. Do not
+                 # move profiled hot/cold functions into section prefixes around runtime code.
+                 '-mllvm', '-profile-guided-section-prefix=false']
+    GEN_FLAGS.extend(flags + names)
+    RT_FLAGS.extend(flags + names)
 
 
 def below_root(p):
@@ -364,12 +392,13 @@ def ninja_file(gen, out, mods, pool_depth, skip=(), prebuilt=False, runtime_lib=
         '',
     ]
     objs = {}
+    pgo_dep = f' | {ninja_path(PGO_INPUT)}' if PGO_INPUT else ''
     for mod, files in mods.items():
         objs[mod] = []
         for f in files:
             o = out / 'obj' / mod / (f.stem + '.o')
             if not prebuilt:
-                lines.append(f'build {ninja_path(o)}: cc_gen {ninja_path(f)}')
+                lines.append(f'build {ninja_path(o)}: cc_gen {ninja_path(f)}{pgo_dep}')
                 lines.append('  pool = gen')
             objs[mod].append(o)
     rt = []
@@ -388,7 +417,7 @@ def ninja_file(gen, out, mods, pool_depth, skip=(), prebuilt=False, runtime_lib=
             lines.append(f'build {ninja_path(o)}: rc {ninja_path(src)} | {ninja_path(RUNTIME / "totk.manifest")} '
                          f'{ninja_path(RUNTIME / "totk.ico")}')
         else:
-            lines.append(f'build {ninja_path(o)}: cc_rt {ninja_path(src)}')
+            lines.append(f'build {ninja_path(o)}: cc_rt {ninja_path(src)}{pgo_dep}')
         rt.append(o)
     objs['runtime'] = rt
     every = [o for v in objs.values() for o in v]
@@ -718,12 +747,18 @@ def main():
                     help=f'build only <out>/{LIB_NAME} from runtime/ (no generated C, no totk.exe)')
     ap.add_argument('--runtime-lib', type=Path, help=f'link against this {LIB_NAME} instead of compiling runtime/ '
                                                     f'({", ".join(sorted(INSTALL_SIDE))} and modules.c still compile)')
+    ap.add_argument('--pgo', metavar='gen|FILE',
+                    help='build an instrumented executable, or optimise with a merged .profdata profile')
     ap.add_argument('--expected', type=Path,
                     help='expected hashes (default tools/data/expected-<display version>.json)')
     args = ap.parse_args()
 
     gen = (args.gen or ROOT / 'generated' / args.version).resolve()
     out = (args.out or ROOT / 'build' / args.version).resolve()
+    if args.pgo:
+        if args.pgo == 'gen' and IS_WINDOWS and not args.toolchain:
+            sys.exit('--pgo gen requires --toolchain on Windows (MSYS2 clang has no profile runtime)')
+        set_pgo(args.pgo, out)
     extracted = ROOT / 'build' / 'extracted' / args.version
     paths = {'exefs': (args.exefs or extracted / 'exefs').resolve(),
              'romfs': (args.romfs or extracted / 'romfs').resolve(),

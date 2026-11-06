@@ -292,6 +292,7 @@ static int cmp_stack_desc(const void *a, const void *b) {
 }
 
 void prof_write(void) {
+    pgo_dump();
     perf_summary_flush();
     if (!out_path || InterlockedExchange(&written, 1)) return;
     InterlockedExchange(&stop, 1);

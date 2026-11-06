@@ -31,6 +31,7 @@ extern unsigned rt_trace;                       // from TOTK_TRACE=svc,host,ipc,
 enum { PERF_PACE, PERF_FENCE, PERF_DRAIN, PERF_PIPE, PERF_XLATE, PERF_TEX, PERF_ASTC, PERF_N };
 void prof_start(void);
 void prof_write(void);                          // idempotent; boot.c calls it before _exit
+void pgo_dump(void);                            // writes an instrumented build's execution profile; otherwise no-op
 uint64_t perf_begin(void);                      // start time of a wait; pair with perf_end
 void perf_end(int kind, uint64_t t0);           // counts render-thread time only
 void perf_replay(uint64_t t0);                  // replay (NVN -> Vulkan recording) time on any thread, waits inside it included

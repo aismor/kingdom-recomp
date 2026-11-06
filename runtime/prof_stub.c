@@ -15,7 +15,7 @@ void prof_start(void) {
     flight_init();
     perf_on = flight_on || overlay == 2;
 }
-void prof_write(void) {}
+void prof_write(void) { pgo_dump(); }
 __attribute__((weak)) void gfx_exit_log(void) {}
 
 void perf_set_overlay(int mode) {
