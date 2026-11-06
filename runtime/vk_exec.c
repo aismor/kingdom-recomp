@@ -338,18 +338,24 @@ static int tfr_recent(const VkExecTarget *t, uint64_t stamp) {
     return tfr_match(e, t) && (e->last == stamp ? e->prev : e->last) == stamp - 1;
 }
 
+static int tfr_first(const VkExecTarget *t, uint64_t stamp) {
+    const TargetFrames *e = tfr_slot(t);
+    return !tfr_match(e, t) || !(e->last == stamp ? e->prev : e->last);
+}
+
 int vk_exec_targets_recent(VkExec *ex, int any) {
     resolve_rt(ex);
     uint64_t stamp = __atomic_load_n(&gfx_counters.frames, __ATOMIC_RELAXED) + 1;
-    int n = 0, recent = 0;
+    int n = 0, color = 0, depth = 0, color_first = 0;
     for (int i = 0; i < 9; i++) {
         const VkExecTarget *t = i < 8 ? &ex->color[i] : &ex->depth;
         if (!t->image) continue;
         n++;
-        if (tfr_recent(t, stamp)) recent++;
+        if (tfr_recent(t, stamp)) *(i < 8 ? &color : &depth) = 1;
         else if (!any) return 0;
+        else if (i < 8 && tfr_first(t, stamp)) color_first = 1;
     }
-    return any ? recent > 0 : n > 0;
+    return any ? color || (depth && !color_first) : n > 0;
 }
 
 // One line naming each target of the current pass: format, extent, layer and the two frames it was last rendered in

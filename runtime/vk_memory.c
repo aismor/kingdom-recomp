@@ -624,6 +624,10 @@ static uint32_t reg_tried[RT_ADDRESS_LIMIT >> REG_SHIFT];   // gen_lock: ww_ep o
 static uint32_t *fcand;                       // gen_lock: regions to try at the next freeze pass
 static int nfcand, cfcand;
 static uint64_t n_frz_refused;                // gen_lock: candidates mem_freeze refused
+// A GPU write does not fault or set a CPU write-watch bit. Keep its regions writable until the submission completes,
+// and thaw one before recording a new GPU write into imported guest memory.
+static uint64_t reg_gpu[RT_ADDRESS_LIMIT >> REG_SHIFT];
+static uint64_t n_frz_gpu, n_thaw_gpu;
 
 static uint32_t *gen_slot(uint64_t page_addr, int create) {
     uint64_t ci = page_addr >> GEN_CHUNK_SHIFT;
@@ -1252,8 +1256,27 @@ int vk_mem_mirror_probe(uint64_t addr) {
     return ((PoolRec *)sp.pool)->mstate == MS_ON;
 }
 
+static void gpu_writes(const PoolRec *r, uint64_t off, uint64_t size) {
+    if (!freeze_idle) return;
+    uint64_t a = r->import_lo + off, b = a + size;
+    if (b <= a || b > RT_ADDRESS_LIMIT) return;
+    uint64_t f = vk_exec_recording_fence();
+    if (!f) f = vk_sync_issued() + 1;
+    int frozen = 0;
+    for (uint64_t j = a >> REG_SHIFT; j <= (b - 1) >> REG_SHIFT; j++) {
+        if (__atomic_load_n(&reg_gpu[j], __ATOMIC_RELAXED) < f)
+            __atomic_store_n(&reg_gpu[j], f, __ATOMIC_RELAXED);
+        frozen |= mem_frozen(j << REG_SHIFT);
+    }
+    if (frozen) {
+        mem_thaw(a, b - a);
+        __atomic_fetch_add(&n_thaw_gpu, 1, __ATOMIC_RELAXED);
+    }
+}
+
 void vk_mem_gpu_wrote(const VkMemSpan *sp, uint64_t size) {
     PoolRec *r = sp->pool;
+    if (r && size) gpu_writes(r, sp->offset, size);
     if (!r || r->mstate != MS_ON || sp->buffer != r->mbuf || !size) return;
     range_add(&wbl, &nwbl, &cwbl, r, sp->offset, size);
 }
@@ -1323,9 +1346,14 @@ void nvn_pool_flushed(const pool_t *p, uint64_t off, uint64_t size) {
 // gen_lock exclusive: freezes up to FREEZE_PER_SUB candidate regions still idle. The query after the
 // protection collects the writes made before it took effect.
 static void freeze_pass(void) {
+    uint64_t gpu_done = vk_sync_fence_done();
     for (int done = 0; nfcand && done < FREEZE_PER_SUB;) {
         uint64_t j = fcand[--nfcand], a = j << REG_SHIFT;
         if (ww_ep - reg_last[j] < (uint32_t)freeze_idle || mem_frozen(a)) continue;
+        if (__atomic_load_n(&reg_gpu[j], __ATOMIC_RELAXED) > gpu_done) {
+            __atomic_fetch_add(&n_frz_gpu, 1, __ATOMIC_RELAXED);
+            continue;
+        }
         done++;
         if (!mem_freeze(a)) { n_frz_refused++; continue; }
         query_stamp(a, a + (1ull << REG_SHIFT), ++gen_now);
@@ -1517,6 +1545,11 @@ static void mirror_log(uint64_t frame) {
                "or mapping change %llu, refused %llu",
                (unsigned long long)frame, wc / wf, wb / wf / 1048576.0, qpc_ms(wt) / wf, dc / wf, wp / wf, qpc_ms(dt) / wf,
                fz * 2.0, (unsigned long long)ff, (unsigned long long)ft, (unsigned long long)fo, (unsigned long long)nr);
+    uint64_t kg = __atomic_exchange_n(&n_frz_gpu, 0, __ATOMIC_RELAXED);
+    uint64_t tg = __atomic_exchange_n(&n_thaw_gpu, 0, __ATOMIC_RELAXED);
+    if (kg || tg)
+        rt_log("mem: frame %llu: regions the GPU writes: %llu kept from freezing, %llu thawed",
+               (unsigned long long)frame, (unsigned long long)kg, (unsigned long long)tg);
     if (!vk_mirror_on) return;
     AcquireSRWLockExclusive(&mirror_stat_lock);
     MirrorAcc a = macc;

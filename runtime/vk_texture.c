@@ -154,6 +154,17 @@ static void make_key(const tex_t *t, TexKey *k) {
 }
 
 // Keys equal apart from the descriptor's swizzle selectors: the same storage, format and geometry.
+// An sRGB view and its linear counterpart have the same texel layout.
+static int linear_format(int f) {
+    switch (f) {
+    case NVN_FORMAT_RGBA8_SRGB: return NVN_FORMAT_RGBA8;
+    case NVN_FORMAT_RGBX8_SRGB: return NVN_FORMAT_RGBX8;
+    case NVN_FORMAT_BGRA8_SRGB: return NVN_FORMAT_BGRA8;
+    case NVN_FORMAT_BGRX8_SRGB: return NVN_FORMAT_BGRX8;
+    default: return f;
+    }
+}
+
 static int same_but_swizzle(const TexKey *a, const TexKey *b) {
     TexKey x = *a, y = *b;
     x.d.swizzle_r = x.d.swizzle_g = x.d.swizzle_b = x.d.swizzle_a = 0;
@@ -1023,7 +1034,7 @@ static Tex *slot_resolve(TexSlot *s, view_t *view, int *has_view) {
         Tex *own = e, *any = NULL;
         e = NULL;
         for (Tex *p = nvn_hm_get(&by_addr, &k.addr); p; p = p->next_at) {
-            if (p->released) continue;
+            if (p->released || linear_format(p->key.d.format) != linear_format(k.d.format)) continue;
             if (!any) any = p;
             if (same_but_swizzle(&p->key, &k)) { e = p; break; }
         }
