@@ -90,13 +90,22 @@ if not IS_WINDOWS:
     # The runtime passes volatile long counters to the Interlocked* of runtime/os.h, which take LONG (32 bits on Linux).
     # Newer clang (the AppImage's LLVM) makes that mismatch an error; older clang and gcc only warn.
     RT_FLAGS.append('-Wno-error=incompatible-pointer-types')
-# The map feeds tools/prof_report.py. --stack is a PE option; an ELF main thread gets its stack from the rlimit.
-# --call-graph-profile-sort=none: with a PGO profile the input objects carry call graph edges and lld would
-# interleave runtime objects between the generated modules' functions. The kernel requires the lifted modules'
-# functions to be one contiguous range (runtime/kernel.c ap_try checks a top-level rip against lo..hi), so the
-# link keeps the input order: main, subsdk0, sdk, runtime.
-LINK_FLAGS = ['-fuse-ld=lld', '-Wl,--call-graph-profile-sort=none',
-              *(['-Wl,--stack,16777216'] if IS_WINDOWS else []), '"-Wl,--Map=$builddir/totk.map"']
+def link_flags(windows):
+    """Linker flags shared by full builds and the release installer for the selected object format."""
+    flags = ['-fuse-ld=lld']
+    if windows:
+        # --stack is a PE option; an ELF main thread gets its stack from the rlimit.
+        flags.append('-Wl,--stack,16777216')
+    else:
+        # With a PGO profile the ELF lld would use its call graph to interleave runtime objects between generated
+        # modules. runtime/kernel.c ap_try requires lifted code to remain one range, in main/subsdk0/sdk input order.
+        # lld-link does not implement this ELF option and preserves the COFF input order without it.
+        flags.append('-Wl,--call-graph-profile-sort=none')
+    flags.append('"-Wl,--Map=$builddir/totk.map"')   # tools/prof_report.py reads the map
+    return flags
+
+
+LINK_FLAGS = link_flags(IS_WINDOWS)
 LINK_LIBS = ['-lpsapi', '-lbcrypt', '-lvulkan-1', '-luser32', '-lgdi32', '-ldwmapi', '-lwinmm', '-lSDL3', '-lopus', '-l:libvpx.a', '-l:libzstd.a', '-l:libstdc++.a', '-l:libwinpthread.a']   # Vulkan back end; libvpx static (movies); libzstd static (resolution.c)
 VMA_INCLUDE = UCRT.parent / 'include' / 'vma'   # vk_mem_alloc.h; MSYS2 package vulkan-memory-allocator
 # --toolchain: an llvm-mingw tree. The libraries, headers and DLLs MSYS2 supplies come from the deps directory instead.

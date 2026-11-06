@@ -158,8 +158,9 @@ The optional `--pgo` flag of `tools/build_game.py` trains the optimiser on real 
    .venv\Scripts\python tools\build_game.py --version <ver> --out build\<ver>-pgo --pgo build\pgo\pgo-<ver>.profdata
    ```
 
-The link always keeps the lifted modules' functions in one contiguous range (`lld --call-graph-profile-sort=none` and
-no hot/cold section prefixes): the kernel needs that for asynchronous preemption
+The link always keeps the lifted modules' functions in one contiguous range (ELF lld uses
+`--call-graph-profile-sort=none`; both formats disable hot/cold section prefixes): the kernel needs that for
+asynchronous preemption
 ([runtime/kernel.c](../runtime/kernel.c), `ap_try`), so a profile never reorders code around it.
 
 An initial 1.4.3 measurement on an RTX 5060 Ti at 3440x1440 used two manually played 90-second world-clock runs. The
