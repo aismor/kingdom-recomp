@@ -86,6 +86,7 @@
  "warn.npdm_differs": "main.npdm difere do dump de referência {version}; só os módulos de código são usados.",
  "warn.dlss_kept": "A biblioteca DLSS existente em {path} é de outra versão e foi preservada.",
  "warn.dlss_download_failed": "Não foi possível baixar o DLSS de {url}: {detail}. O jogo continua funcionando sem ele; execute o instalador novamente para tentar de novo.",
+ "warn.shaders_skipped": "O driver gráfico travou ao compilar alguns shaders, então {count} foram excluídos da preparação. O jogo os compila quando precisar deles pela primeira vez, e o driver também pode travar nesse momento; uma atualização do driver pode corrigir o problema. Detalhes: {log}",
 
  "ui.title": "Instalação TotK",
  "ui.version": "versão {version}",

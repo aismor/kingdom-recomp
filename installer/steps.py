@@ -665,11 +665,22 @@ class Compile(Step):
 
 TRANSLATED = re.compile(r'gfx_shader: prepare: (\d+) of (\d+) pairs')
 ASPECT_SIZES = ('2560x1080', '3440x1440', '3840x1600', '5120x2160')
+# runtime/vk_pipeline.c lb_warm_prepared: variants the driver crashed on in an earlier run (tools/prepare_shaders.py
+# runs the driver step again after such a crash)
+SKIPPED = re.compile(r'prepare-shaders: (\d+) variants skipped: the graphics driver crashed')
 
 
 def defer_shader_gpu_prepare():
     """Linux AppImage and kingdom-setup.sh: seeds in the GUI, totk --prepare-shaders on the host. Never on Windows."""
     return os.environ.get(PENDING_SHADERS) and os.name != 'nt'
+
+
+def queue_shader_gpu_prepare(dest):
+    """Tell the Linux launcher to finish a seeded install on the host GPU after the setup window closes."""
+    pending = os.environ.get(PENDING_SHADERS)
+    if pending and os.name != 'nt':
+        with open(pending, 'a', encoding='utf-8') as f:
+            f.write(f'{dest}\n')
 
 
 class Prepare(Step):
@@ -747,10 +758,14 @@ class Prepare(Step):
             shader_list = ctx.temp / 'shader_list.tsv'
             shader_list.write_text(shader_list_text(layout), encoding='utf-8', newline='\n')
 
+        skipped = [0]
+
         def parse(line):
             m = TRANSLATED.search(line)
             if m:
                 rep.progress('prepare', 'translate', int(m.group(1)), int(m.group(2)), 'shaders')
+            elif (m := SKIPPED.search(line)):
+                skipped[0] = int(m.group(1))
             elif 'listed variants' in line:
                 rep.progress('prepare', 'translate', force=True)
             elif 'gfx_shader: prepare:' in line and 'translated' in line and 'programs' in line:
@@ -763,10 +778,11 @@ class Prepare(Step):
                               dest / 'exefs', '--list', shader_list, *(['--no-run'] if pending else [])], parse)
         if code or not (dest / self.done_file()).is_file():
             raise InstallError('prepare.shaders_failed', code=code, log=str(log))
+        if skipped[0]:
+            rep.warning('warn.shaders_skipped', count=skipped[0], log=str(log))
         if pending:
             remove(dest / 'shader-prepared.bin')   # older than these seeds: the host translates them again
-            with open(pending, 'a', encoding='utf-8') as f:
-                f.write(f'{dest}\n')
+            queue_shader_gpu_prepare(dest)
         else:
             # One shader-cache.pack instead of four files per shader. The Linux launcher does this after its host-side
             # GPU preparation instead, because the container only writes the seed files here.
@@ -797,6 +813,11 @@ class Cleanup(Step):
             remove(stale)
         for name in ('gen', 'build', 'check', 'split', 'shader_list.tsv'):
             remove(ctx.temp / name)
+        # A previous GUI run can lose its event pipe after saving the prepare step. On resume that step is current, so
+        # enqueue its existing seeds here as well; AppRun sorts duplicate destinations before using the host GPU.
+        if (defer_shader_gpu_prepare() and (dest / 'seed-answers.bin').is_file() and
+                not (dest / 'shader-prepared.bin').is_file()):
+            queue_shader_gpu_prepare(dest)
         return {}
 
 

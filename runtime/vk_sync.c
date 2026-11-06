@@ -332,6 +332,7 @@ static int claim_slot(VkCtx *c, uint64_t fence) {
             slots[i].fence = fence;
             return i;
         }
+    rec_drain();   // the recorder owns the command pool while it has packets
     CmdSlot *n = realloc(slots, sizeof *n * (size_t)(nslots + 1));
     if (!n) rt_fatal("vk: out of memory (command buffers)");
     slots = n;
@@ -355,22 +356,19 @@ static VkCommandBuffer prologue(VkCtx *c, uint64_t fence) {
     if (!vk_mem_mirror_pending()) return VK_NULL_HANDLE;
     int i = claim_slot(c, fence);   // before reading slots: the claim may move it
     VkCommandBuffer cb = slots[i].cb;
-    VkCommandBufferBeginInfo bi = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-                                   .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
-    vkBeginCommandBuffer(cb, &bi);
+    rec_begin(cb);
     int pair = ts_open(cb);
     vk_mem_mirror_prologue(cb);
     ts_close(cb, pair, fence);
-    vkEndCommandBuffer(cb);
+    if (!rec_end_cb(cb)) vkEndCommandBuffer(cb);
     return cb;
 }
 
 VkCommandBuffer vk_sync_split(void) {
     VkCtx *c = vk_ctx();
     VkCommandBuffer cb = slots[cur_slot].cb;
-    rec_end();   // every command of the part is in cb
     ts_end(cb, cur_fence);
-    vkEndCommandBuffer(cb);
+    if (!rec_end_cb(cb)) vkEndCommandBuffer(cb);
     vk_upload_flush(0);   // the uploads this part asked for precede it in queue order
     VkCommandBuffer pro = prologue(c, cur_fence);
     VkCommandBufferSubmitInfo cbi[2] = {{.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, .commandBuffer = pro},
@@ -378,17 +376,12 @@ VkCommandBuffer vk_sync_split(void) {
     VkSubmitInfo2 si = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2, .commandBufferInfoCount = pro ? 2 : 1,
                         .pCommandBufferInfos = pro ? cbi : cbi + 1};
     ts_submitted();
-    vk_queue_lock();
-    VkResult r = vkQueueSubmit2(c->gfx_queue, 1, &si, VK_NULL_HANDLE);
-    vk_queue_unlock();
+    VkResult r = rec_submit(&si);
     if (r != VK_SUCCESS) rt_fatal("vk: vkQueueSubmit2 of a part of value %llu failed (%d)", (unsigned long long)cur_fence, (int)r);
     vk_mem_note_submit(cur_fence);   // objects destroyed from here on may be in use by the part just submitted
     CmdSlot *s = take_slot(c, cur_fence);   // the submitted part keeps its slot until the value is reached
-    VkCommandBufferBeginInfo bi = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-                                   .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
-    vkBeginCommandBuffer(s->cb, &bi);
-    ts_begin(s->cb);
     rec_begin(s->cb);
+    ts_begin(s->cb);
     return s->cb;
 }
 
@@ -411,18 +404,14 @@ uint64_t vk_sync_submit(const uint64_t *handles, int n) {
     uint64_t fence = __atomic_load_n(&issued, __ATOMIC_ACQUIRE) + 1;
     cur_fence = fence;
     CmdSlot *s = take_slot(c, fence);
-    VkCommandBufferBeginInfo bi = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-                                   .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
     uint64_t t0 = perf_begin();
-    vkBeginCommandBuffer(s->cb, &bi);
-    ts_begin(s->cb);
     rec_begin(s->cb);
+    ts_begin(s->cb);
     int recorded = vk_exec_record(s->cb, handles, n, fence);
     s = &slots[cur_slot];   // the last part (vk_sync_split)
-    rec_end();
     if (recorded) ts_end(s->cb, fence);
     else ts_drop();
-    vkEndCommandBuffer(s->cb);
+    if (!rec_end_cb(s->cb)) vkEndCommandBuffer(s->cb);
     perf_replay(t0);
     // After the recording: the uploads it asked for (and every earlier one) precede it in queue order.
     vk_upload_flush(0);
@@ -437,9 +426,7 @@ uint64_t vk_sync_submit(const uint64_t *handles, int n) {
                         .pCommandBufferInfos = pro ? cbi : cbi + 1, .signalSemaphoreInfoCount = 1,
                         .pSignalSemaphoreInfos = &sig};
     ts_submitted();
-    vk_queue_lock();
-    VkResult r = vkQueueSubmit2(c->gfx_queue, 1, &si, VK_NULL_HANDLE);
-    vk_queue_unlock();
+    VkResult r = rec_submit(&si);
     if (r != VK_SUCCESS) rt_fatal("vk: vkQueueSubmit2 of value %llu failed (%d)", (unsigned long long)fence, (int)r);
     s->fence = recorded ? fence : 0;
     vk_mem_note_submit(fence);

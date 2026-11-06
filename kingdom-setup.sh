@@ -134,9 +134,22 @@ sort -u "$PENDING" | while IFS= read -r dest; do
         say "Fedora: sudo dnf install SDL3 libvpx opus libzstd   Ubuntu/Debian: sudo apt install libsdl3-0 libvpx9 libopus0 libzstd1"
         continue
     fi
+    shader_status=0
     if [[ ! -f "$dest/shader-prepared.bin" ]]; then
         say "preparing shaders in $dest (a few minutes, uses the GPU)..."
-        (cd "$dest" && ./totk --prepare-shaders) || say "shader preparation failed; the game still runs, with stutter at first"
+        (cd "$dest" && ./totk --prepare-shaders) || shader_status=$?
+    elif [[ -s "$dest/shader-prepare-journal.bin" ]]; then
+        shader_status=1
+    fi
+    retry=0
+    while [[ "$shader_status" -ne 0 && -s "$dest/shader-prepare-journal.bin" && "$retry" -lt 3 ]]; do
+        retry=$((retry + 1))
+        say "the graphics driver crashed; retrying without the variants it was building ($retry/3)..."
+        shader_status=0
+        (cd "$dest" && ./totk --warm-shaders) || shader_status=$?
+    done
+    if [[ "$shader_status" -ne 0 ]]; then
+        say "shader preparation failed; the game still runs, with stutter at first"
     fi
     if [[ -d "$dest/shader-cache" ]]; then
         say "packing the shader cache in $dest..."

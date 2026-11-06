@@ -103,6 +103,11 @@ From the repository root, in PowerShell. Every step that depends on the game ver
    Without this step the first launch compiles shaders and pipelines during play and stutters until the caches fill.
    The AMD driver keeps its pipeline cache per exe path and holds a limited amount: preparing another build folder can
    evict this one's. `totk.exe --warm-shaders` rebuilds it from the shader cache.
+   When the driver's shader compiler crashes on a variant (NVIDIA 615.78.08 on an RTX 5080 does, issue #30),
+   `prepare_shaders.py` runs the driver step again with `--warm-shaders`, up to three times, without the variants the
+   driver was building at the crash. `shader-prepare-skip.txt` next to the exe lists them with the GPU and driver
+   version; they build at their first draw instead, another driver version builds them again, and so does deleting the
+   file.
 
 7. Run. Keep the window in the foreground; an unfocused window stalls the game.
 
@@ -119,6 +124,56 @@ Settings live in `totk.ini` next to `totk.exe` ([totk.ini.example](../totk.ini.e
 your machines without MSYS2, Python or .NET. `romfs.bin` stays out unless you pass `--with-romfs`; otherwise put it in
 `romfs\` next to the exe or point `TOTK_ROMFS` at its folder. Run `totk.exe --prepare-shaders` once in the copied
 folder. The folder holds code and data derived from your game: for your own machines only.
+
+### Performance profiles (PGO)
+
+The optional `--pgo` flag of `tools/build_game.py` trains the optimiser on real play:
+
+1. Build an instrumented executable, whose runtime writes `<out>\pgo\default_<id>.profraw` every minute and at exit
+   (successive runs of the same exe add to that file):
+
+   ```powershell
+   .venv\Scripts\python tools\build_game.py --version <ver> --out build\<ver>-pgogen --pgo gen
+   ```
+
+2. Train it on the play the profile should optimise: a real session (minutes of gameplay, menus, combat); normal exits
+   only, a crash loses the counters since the last minute's flush.
+
+3. Merge the raw profiles (the raw format is tied to the compiler version, so the merging llvm-profdata must match the
+   clang that compiled the instrumented build; pass `--toolchain DIR` when it is not under `toolchain\`):
+
+   ```powershell
+   .venv\Scripts\python tools\pgo.py merge build\<ver>-pgogen --version <ver>
+   ```
+
+   This writes `build\pgo\pgo-<ver>.profdata` and its record `pgo-<ver>.json`, which names the game version and the
+   git tree of `recomp/` the profile matches (`tools/make_release.py` will ship it only while that tree is unchanged:
+   `llvm-profdata` matches functions by name and control-flow hash, so a regenerated function silently loses its
+   counts). On Windows give `--toolchain`: MSYS2 clang has no profile runtime, so `--pgo gen` there requires the
+   packaged LLVM-MinGW toolchain (not yet exercised).
+
+4. Build the optimised executable:
+
+   ```powershell
+   .venv\Scripts\python tools\build_game.py --version <ver> --out build\<ver>-pgo --pgo build\pgo\pgo-<ver>.profdata
+   ```
+
+The link always keeps the lifted modules' functions in one contiguous range (`lld --call-graph-profile-sort=none` and
+no hot/cold section prefixes): the kernel needs that for asynchronous preemption
+([runtime/kernel.c](../runtime/kernel.c), `ap_try`), so a profile never reorders code around it.
+
+An initial 1.4.3 measurement on an RTX 5060 Ti at 3440x1440 used two manually played 90-second world-clock runs. The
+PGO build averaged 105.5 fps (79.1 fps in its slowest 120-frame window), against 98.2 fps (75.8 fps slowest window)
+for the non-PGO build: 7.4% higher average throughput and 4.3% in the slowest window. Both runs completed with no
+validation errors, shader failures or skipped draws. Treat this as directional rather than a controlled benchmark:
+the paths were similar but not scripted, the non-PGO build loaded additional mods, and its shader and pipeline caches
+were more complete. The latter favoured the non-PGO build, which nevertheless ran slower.
+
+For a reproducible comparison, use the same profile copy, scripted input, RomFS overlays and warm shader/pipeline
+caches for both builds. Run them one at a time and compare only the `[host] fps:` lines after `frame step: world clock
+starts`. `TOTK_GPU=null` removes Vulkan and GPU variance when measuring lifted-code CPU throughput; set a frame limit
+high enough not to pace the measured scene, but first verify that the chosen rate completes the scripted run on both
+builds.
 
 ## Checks
 
