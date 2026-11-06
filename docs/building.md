@@ -120,6 +120,43 @@ your machines without MSYS2, Python or .NET. `romfs.bin` stays out unless you pa
 `romfs\` next to the exe or point `TOTK_ROMFS` at its folder. Run `totk.exe --prepare-shaders` once in the copied
 folder. The folder holds code and data derived from your game: for your own machines only.
 
+### Performance profiles (PGO)
+
+The optional `--pgo` flag of `tools/build_game.py` trains the optimiser on real play:
+
+1. Build an instrumented executable, whose runtime writes `<out>\pgo\default_<id>.profraw` every minute and at exit
+   (successive runs of the same exe add to that file):
+
+   ```powershell
+   .venv\Scripts\python tools\build_game.py --version <ver> --out build\<ver>-pgogen --pgo gen
+   ```
+
+2. Train it on the play the profile should optimise: a real session (minutes of gameplay, menus, combat); normal exits
+   only, a crash loses the counters since the last minute's flush.
+
+3. Merge the raw profiles (the raw format is tied to the compiler version, so the merging llvm-profdata must match the
+   clang that compiled the instrumented build; pass `--toolchain DIR` when it is not under `toolchain\`):
+
+   ```powershell
+   .venv\Scripts\python tools\pgo.py merge build\<ver>-pgogen --version <ver>
+   ```
+
+   This writes `build\pgo\pgo-<ver>.profdata` and its record `pgo-<ver>.json`, which names the game version and the
+   git tree of `recomp/` the profile matches (`tools/make_release.py` will ship it only while that tree is unchanged:
+   `llvm-profdata` matches functions by name and control-flow hash, so a regenerated function silently loses its
+   counts). On Windows give `--toolchain`: MSYS2 clang has no profile runtime, so `--pgo gen` there requires the
+   packaged LLVM-MinGW toolchain (not yet exercised).
+
+4. Build the optimised executable:
+
+   ```powershell
+   .venv\Scripts\python tools\build_game.py --version <ver> --out build\<ver>-pgo --pgo build\pgo\pgo-<ver>.profdata
+   ```
+
+The link always keeps the lifted modules' functions in one contiguous range (`lld --call-graph-profile-sort=none` and
+no hot/cold section prefixes): the kernel needs that for asynchronous preemption
+([runtime/kernel.c](../runtime/kernel.c), `ap_try`), so a profile never reorders code around it.
+
 ## Checks
 
 Before a commit:
