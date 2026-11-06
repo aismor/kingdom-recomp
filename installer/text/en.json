@@ -86,6 +86,7 @@
  "warn.npdm_differs": "main.npdm differs from the reference {version} dump; only the code modules are used.",
  "warn.dlss_kept": "The existing DLSS library at {path} is a different version and was kept.",
  "warn.dlss_download_failed": "DLSS could not be downloaded from {url}: {detail}. The game still works without it; run the setup again to retry.",
+ "warn.shaders_skipped": "The graphics driver crashed while building some shaders, so {count} were left out of the preparation. The game builds them when it first needs them, and the driver may crash there too; a driver update may fix it. Details: {log}",
 
  "ui.title": "TotK Setup",
  "ui.version": "version {version}",

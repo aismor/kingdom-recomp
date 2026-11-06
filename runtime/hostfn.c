@@ -35,7 +35,7 @@ typedef struct {
     const char *name;
     GuestFn fn;
     uint64_t original;   // observers: the guest definition rt_original calls
-    uint64_t calls;
+    uint64_t calls;      // with TOTK_TRACE=host only (hostfn_report)
     int blocking;        // runs with the virtual core given up (hostfn_blocking)
 } Slot;
 static Slot slots[MAX_HOSTFN];
@@ -43,6 +43,19 @@ static int nslots;
 static RtHostEntry added[MAX_ADDED];
 static int nadded;
 static int sealed;
+
+// One counter per calling thread avoids bouncing the read-mostly host-function slots' cache lines on every call.
+#define MAX_CALL_COUNTERS 4096
+typedef struct { _Alignas(64) uint64_t n; } CallCounter;
+static CallCounter call_counters[MAX_CALL_COUNTERS];
+static uint32_t ncall_counters;
+static uint64_t shared_calls;
+static _Thread_local uint64_t *thread_calls;
+
+__attribute__((noinline)) static uint64_t *call_counter_new(void) {
+    uint32_t i = __atomic_fetch_add(&ncall_counters, 1, __ATOMIC_RELAXED);
+    return thread_calls = i < MAX_CALL_COUNTERS ? &call_counters[i].n : &shared_calls;
+}
 
 static GuestFn table_find(const RtHostEntry *start, const RtHostEntry *stop, const char *name) {
     __asm__("" : "+r"(start), "+r"(stop));   // separate objects: keep the compiler from reasoning about them
@@ -146,8 +159,11 @@ static void hostfn_entry(Cpu *c) {
     uint64_t i = (c->pc - RT_HOSTFN_BASE) >> 4;
     if (__builtin_expect((c->pc & 15) || i >= (uint64_t)nslots, 0)) bad_entry(c);
     Slot *s = &slots[i];
-    uint64_t n = __atomic_fetch_add(&s->calls, 1, __ATOMIC_RELAXED);
-    if (__builtin_expect(!n && (rt_trace & RT_TRACE_HOSTCALL), 0)) {
+    uint64_t *calls = thread_calls;
+    if (__builtin_expect(!calls, 0)) calls = call_counter_new();
+    if (__builtin_expect(calls == &shared_calls, 0)) __atomic_fetch_add(calls, 1, __ATOMIC_RELAXED);
+    else __atomic_store_n(calls, *calls + 1, __ATOMIC_RELAXED);
+    if (__builtin_expect(rt_trace & RT_TRACE_HOSTCALL, 0) && !__atomic_fetch_add(&s->calls, 1, __ATOMIC_RELAXED)) {
         char lr[96];
         rt_log("host call %s from %s", s->name, ldr_describe(c->x[30] - 4, lr, sizeof lr));
     }
@@ -178,8 +194,10 @@ void hostfn_seal(void) {
 }
 
 uint64_t hostfn_calls(void) {
-    uint64_t n = 0;
-    for (int i = 0; i < nslots; i++) n += __atomic_load_n(&slots[i].calls, __ATOMIC_RELAXED);
+    uint32_t m = __atomic_load_n(&ncall_counters, __ATOMIC_RELAXED);
+    uint64_t n = __atomic_load_n(&shared_calls, __ATOMIC_RELAXED);
+    for (uint32_t i = 0; i < m && i < MAX_CALL_COUNTERS; i++)
+        n += __atomic_load_n(&call_counters[i].n, __ATOMIC_RELAXED);
     return n;
 }
 

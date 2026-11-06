@@ -384,17 +384,31 @@ sort -u "$PENDING" | while IFS= read -r dest; do
         echo "totk needs libraries the system lacks: $missing" >&2
         continue
     fi
+    threads="${TOTK_LIB_PREBUILD_THREADS:-}"
+    if [ -z "$threads" ]; then
+        cpus=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
+        threads=$((cpus / 4))
+        [ "$threads" -lt 1 ] && threads=1
+        [ "$threads" -gt 16 ] && threads=16
+    fi
+    shader_status=0
     if [ ! -f "$dest/shader-prepared.bin" ]; then
         echo "Preparing shaders in $dest (uses the GPU; a few minutes)..." >&2
-        threads="${TOTK_LIB_PREBUILD_THREADS:-}"
-        if [ -z "$threads" ]; then
-            cpus=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
-            threads=$((cpus / 4))
-            [ "$threads" -lt 1 ] && threads=1
-            [ "$threads" -gt 16 ] && threads=16
-        fi
-        (cd "$dest" && TOTK_LIB_PREBUILD_THREADS="$threads" ./totk --prepare-shaders) ||
-            echo "Shader preparation failed; the game still runs, with stutter at first." >&2
+        (cd "$dest" && TOTK_LIB_PREBUILD_THREADS="$threads" ./totk --prepare-shaders) || shader_status=$?
+    elif [ -s "$dest/shader-prepare-journal.bin" ]; then
+        # The window can be rerun after the driver killed an earlier host-side preparation. shader-prepared.bin names
+        # the translated variants, while this journal means their driver-cache prebuild did not finish.
+        shader_status=1
+    fi
+    retry=0
+    while [ "$shader_status" -ne 0 ] && [ -s "$dest/shader-prepare-journal.bin" ] && [ "$retry" -lt 3 ]; do
+        retry=$((retry + 1))
+        echo "The graphics driver crashed; retrying without the variants it was building ($retry/3)..." >&2
+        shader_status=0
+        (cd "$dest" && TOTK_LIB_PREBUILD_THREADS="$threads" ./totk --warm-shaders) || shader_status=$?
+    done
+    if [ "$shader_status" -ne 0 ]; then
+        echo "Shader preparation failed; the game still runs, with stutter at first." >&2
     fi
     if [ -d "$dest/shader-cache" ]; then
         "$PY" "$HERE/tools/pack_shader_cache.py" "$dest/shader-cache" ||

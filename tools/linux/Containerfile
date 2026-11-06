@@ -4,15 +4,17 @@ FROM registry.fedoraproject.org/fedora:41
 
 RUN dnf -y install --setopt=install_weak_deps=False \
         python3.14 python3.14-tkinter \
-        clang lld llvm ninja-build gcc make git curl tar gzip findutils pkgconf-pkg-config \
+        clang lld llvm ninja-build gcc make git curl tar gzip file findutils pkgconf-pkg-config \
         SDL3-devel vulkan-headers vulkan-loader-devel libvpx-devel opus-devel libzstd-devel zlib-devel \
         libstdc++-static mbedtls-devel libicu \
         dejavu-sans-fonts \
     && dnf clean all
 
-# tools/requirements-installer.txt: what the installer steps import (the release bundles the same packages).
+# tools/requirements-installer.txt: what the installer steps import (the release bundles the same packages). Pillow is
+# used only while assembling the release icon, as in .github/workflows/release.yml, and is not bundled for the player.
 COPY requirements-installer.txt /tmp/requirements-installer.txt
-RUN python3.14 -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir -r /tmp/requirements-installer.txt
+RUN python3.14 -m venv /opt/venv \
+    && /opt/venv/bin/pip install --no-cache-dir -r /tmp/requirements-installer.txt Pillow
 
 # The VMA header tools/build_game.py looks for in /usr/local/include/vma; the release's MSYS2 package is 3.4.0 too.
 ARG VMA_SHA256=8487b7995ad3b263eb73bc5b9a77d71aa69b6bef5d58a715c02d2663afd81f1a

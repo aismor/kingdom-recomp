@@ -3,7 +3,8 @@
 // call's arguments; its pointers point into the packet itself, so the recorder passes the payload to the driver as
 // it is. A packet never wraps: one that does not fit before the end is preceded by a pad. The producer publishes head
 // after each packet; the recorder makes the calls and advances tail, which the producer waits on when the ring is
-// full and in rec_drain. While a part is recorded the recorder spins on head; idle, it sleeps on an event.
+// full and in rec_drain. While a part is recorded the recorder spins on head; idle, it sleeps on an event. Packets also
+// begin, end and submit recorded parts, so a part's command buffer stays on one thread throughout.
 // Design: Savage Wind Recomp #189 and LAS Recomp runtime/nvn/vulkan/record.c (https://github.com/peiikai/LASRecomp
 // @ a4b53a3, MIT, Copyright (c) 2026 Peiikai); the code is ours.
 #define VK_REC_IMPL
@@ -21,12 +22,16 @@ static volatile uint64_t head, tail;   // words published by the producer / cons
 static volatile LONG sleeping;         // the recorder waits for wake_ev
 static HANDLE wake_ev;                 // auto-reset
 static uint64_t put_h;                 // producer: words written (published up to head)
-static VkCommandBuffer rec_cb;         // the part being recorded (set while the recorder is idle)
+static VkCommandBuffer rec_cb;         // producer: the part being recorded
+static VkCommandBuffer r_cb;           // recorder: the command buffer receiving packets
 static int rec_live;                   // producer: rec_begin started the recorder for rec_cb
+static int end_mode = -1;              // TOTK_REC_END
+static int sub_pending;                 // a recorded part was ended but has not been submitted
+static volatile VkResult sub_result;
 static HANDLE rec_thread;
 
 // Producer statistics, logged by rec_stats_log.
-static struct { uint64_t packets, words, drains, fallbacks, drain_ns, full_waits, parts, parts_on; } RS_;
+static struct { uint64_t packets, words, drains, fallbacks, drain_ns, full_waits, parts, parts_on, submits; } RS_;
 
 enum {
     R_PAD, R_BeginQuery, R_BeginRendering, R_BindDescriptorSets, R_BindIndexBuffer, R_BindPipeline, R_BindVertexBuffers2,
@@ -38,6 +43,7 @@ enum {
     R_SetRasterizerDiscardEnable, R_SetScissorWithCount, R_SetStencilCompareMask, R_SetStencilOp, R_SetStencilReference,
     R_SetStencilTestEnable, R_SetStencilWriteMask, R_SetViewportWithCount, R_WriteTimestamp, R_WriteTimestamp2,
     R_PushTpl, R_Push, R_VertexInput, R_Bool, R_PolygonMode, R_BlendEnable, R_BlendEquation, R_WriteMask,
+    R_BeginCb, R_EndCb, R_Submit,
 };
 
 static uint64_t now_ns(void) {
@@ -125,6 +131,19 @@ void rec_drain(void) {
     RS_.drains++, RS_.drain_ns += now_ns() - t0;
 }
 
+static int rec_own(void) {
+    if (end_mode < 0) end_mode = rt_knob("REC_END", "1");
+    return end_mode;
+}
+
+static void begin_now(VkCommandBuffer cb) {
+    VkCommandBufferBeginInfo bi = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+                                   .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
+    vkBeginCommandBuffer(cb, &bi);
+}
+
+typedef struct { VkCommandBuffer cb; int begin; } A_BeginCb;
+
 void rec_begin(VkCommandBuffer cb) {
     static int mode = -1;
     if (mode < 0) {
@@ -143,9 +162,18 @@ void rec_begin(VkCommandBuffer cb) {
         }
     }
     RS_.parts++;
-    if (!RT_KNOB_ON(mode)) return;
+    int on = RT_KNOB_ON(mode), own = on && rec_own();
+    if (!own) {
+        // The command pool belongs to the recorder while packets are outstanding.
+        rec_drain();
+        begin_now(cb);
+        if (!on) return;
+    }
     RS_.parts_on++;
-    rec_cb = cb;   // the recorder is idle: rec_end drained it
+    A_BeginCb *a = put(R_BeginCb, sizeof *a);
+    *a = (A_BeginCb){cb, own};
+    pub();
+    rec_cb = cb;
     rec_live = 1;
 }
 
@@ -155,13 +183,61 @@ void rec_end(void) {
     rec_live = 0;
 }
 
+int rec_end_cb(VkCommandBuffer cb) {
+    static int said;
+    int own = rec_own();
+    if (rec_live && cb == rec_cb && !said) {
+        said = 1;
+        rt_log("vk_rec: recorded parts are begun, ended and submitted by %s (TOTK_REC_END=%d)",
+               own ? "the recorder" : "the submitting thread", own);
+    }
+    if (!rec_live || cb != rec_cb || !own) {
+        rec_end();
+        return 0;
+    }
+    put(R_EndCb, 0);
+    pub();
+    rec_live = 0;
+    sub_pending = 1;
+    return 1;
+}
+
+typedef struct { uint32_t ncb, nsig; VkCommandBufferSubmitInfo cbi[2]; VkSemaphoreSubmitInfo sig; } A_Submit;
+
+static void submit_now(const VkSubmitInfo2 *si) {
+    vk_queue_lock();
+    sub_result = vkQueueSubmit2(vk_ctx()->gfx_queue, 1, si, VK_NULL_HANDLE);
+    vk_queue_unlock();
+}
+
+VkResult rec_submit(const VkSubmitInfo2 *si) {
+    if (!sub_pending) {
+        submit_now(si);
+        return sub_result;
+    }
+    sub_pending = 0;
+    if (si->commandBufferInfoCount > 2 || si->signalSemaphoreInfoCount > 1 || si->waitSemaphoreInfoCount || si->pNext)
+        rt_fatal("vk_rec: unsupported submission shape (%u command buffers, %u waits, %u signals)",
+                 si->commandBufferInfoCount, si->waitSemaphoreInfoCount, si->signalSemaphoreInfoCount);
+    A_Submit *a = put(R_Submit, sizeof *a);
+    memset(a, 0, sizeof *a);
+    a->ncb = si->commandBufferInfoCount;
+    a->nsig = si->signalSemaphoreInfoCount;
+    for (uint32_t i = 0; i < a->ncb; i++) a->cbi[i] = si->pCommandBufferInfos[i];
+    if (a->nsig) a->sig = si->pSignalSemaphoreInfos[0];
+    pub();
+    rec_drain();
+    RS_.submits++;
+    return sub_result;
+}
+
 void rec_stats_log(void) {
     if (!(rt_trace & RT_TRACE_PERF) || !RS_.parts) return;
     rt_log("vk_rec: %llu of %llu parts recorded by the recorder: %llu packets (%.1f MiB), %llu drains (%llu for a call "
-           "without a packet) waited %.2f ms in all, ring full %llu times",
+           "without a packet) waited %.2f ms in all, ring full %llu times, %llu submissions made by the recorder",
            (unsigned long long)RS_.parts_on, (unsigned long long)RS_.parts, (unsigned long long)RS_.packets,
            RS_.words * 8 / 1048576.0, (unsigned long long)RS_.drains, (unsigned long long)RS_.fallbacks,
-           RS_.drain_ns / 1e6, (unsigned long long)RS_.full_waits);
+           RS_.drain_ns / 1e6, (unsigned long long)RS_.full_waits, (unsigned long long)RS_.submits);
     memset(&RS_, 0, sizeof RS_);
 }
 
@@ -511,7 +587,22 @@ TARGET_CMD(rec_write_mask, R_WriteMask, PFN_vkCmdSetColorWriteMaskEXT, VkColorCo
 // ---- the recorder's side
 
 static void exec_packet(uint32_t op, void *p) {
-    VkCommandBuffer cb = rec_cb;
+    if (op == R_BeginCb) {
+        A_BeginCb *a = p;
+        r_cb = a->cb;
+        if (a->begin) begin_now(r_cb);
+        return;
+    }
+    if (op == R_Submit) {
+        A_Submit *a = p;
+        VkSubmitInfo2 si = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+                            .commandBufferInfoCount = a->ncb, .pCommandBufferInfos = a->cbi,
+                            .signalSemaphoreInfoCount = a->nsig,
+                            .pSignalSemaphoreInfos = a->nsig ? &a->sig : NULL};
+        submit_now(&si);
+        return;
+    }
+    VkCommandBuffer cb = r_cb;
     switch (op) {
 #define F(name, ...) case R_##name: { A_##name *a = p; vkCmd##name(cb, __VA_ARGS__); break; }
     F(BeginQuery, a->p, a->q, a->f)
@@ -581,6 +672,7 @@ static void exec_packet(uint32_t op, void *p) {
     case R_BlendEnable: { A_Targets *a = p; ((PFN_vkCmdSetColorBlendEnableEXT)a->fn)(cb, a->first, a->n, a->v); break; }
     case R_BlendEquation: { A_Targets *a = p; ((PFN_vkCmdSetColorBlendEquationEXT)a->fn)(cb, a->first, a->n, a->v); break; }
     case R_WriteMask: { A_Targets *a = p; ((PFN_vkCmdSetColorWriteMaskEXT)a->fn)(cb, a->first, a->n, a->v); break; }
+    case R_EndCb: vkEndCommandBuffer(cb); break;
     default: rt_fatal("vk_rec: unknown packet %u", op);
     }
 }

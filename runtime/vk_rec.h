@@ -14,8 +14,13 @@
 // MIT, Copyright (c) 2026 Peiikai): the driver's work behind the commands depends on nothing the replay decides next.
 #pragma once
 
-void rec_begin(VkCommandBuffer cb);   // the submitting thread, sub_lock held
+void rec_begin(VkCommandBuffer cb);   // begins cb; the submitting thread holds sub_lock
 void rec_end(void);                   // waits for the recorder; no-op when rec_begin did not start it
+// Ends cb on the recorder when it recorded the part (1); otherwise drains and leaves the end to the caller (0).
+int rec_end_cb(VkCommandBuffer cb);
+// Submits through the recorder when it ended the part, and waits until the queue has accepted it; otherwise submits
+// on the calling thread. The submit has at most two command buffers, one signal and no waits or pNext chain.
+VkResult rec_submit(const VkSubmitInfo2 *si);
 void rec_drain(void);                 // waits until the recorder made every call queued so far
 void rec_stats_log(void);             // TOTK_TRACE=perf: packets, bytes, drains and waits since the last call
 

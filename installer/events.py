@@ -14,6 +14,7 @@ Every event has "type" and "t" (seconds since the start). Types:
 Text is never the payload: ids name a step ("step.<id>"), a phase ("phase.<step>.<phase>") or a message ("<id>"),
 and installer/text/en.json holds their English text with {param} placeholders. The log renders events with it.
 """
+import errno
 import json
 import os
 import sys
@@ -69,10 +70,22 @@ class Reporter:
 
     def emit(self, type, **fields):
         event = {'type': type, 't': round(self.elapsed(), 2), **fields}
-        with self.lock:
-            self.out.write(json.dumps(event, ensure_ascii=False) + '\n')
-            self.out.flush()
+        output_error = None
+        if self.out:
+            with self.lock:
+                try:
+                    self.out.write(json.dumps(event, ensure_ascii=False) + '\n')
+                    self.out.flush()
+                except OSError as e:
+                    if e.errno not in (errno.EBADF, errno.EPIPE):
+                        raise
+                    # The GUI may disappear or lose its pipe while a long tool is running. Progress delivery is
+                    # optional; keep the installation and its durable log alive so it can still finish and resume.
+                    self.out = None
+                    output_error = e
         self.log(self.describe(event))
+        if output_error:
+            self.log(f'event output unavailable ({output_error}); continuing with the log only')
         return event
 
     def describe(self, e):
