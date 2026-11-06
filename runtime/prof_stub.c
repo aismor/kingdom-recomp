@@ -1,6 +1,7 @@
 // Linux side of prof_win.c: no sampling profiler (TOTK_PROFILE) or perf log; frame times, render-thread waits, replay
 // time and event counts feed the performance overlay and flight recorder, as prof_win.c perf_present does.
 #include "os.h"
+#include "cfg.h"
 #include "flight.h"
 #include "host.h"
 #include "perfmon.h"
@@ -84,7 +85,9 @@ void perf_present(uint64_t frame) {
 int rt_ab(void) { return 0; }
 
 int rt_knob(const char *name, const char *def) {
-    (void)name;
-    (void)def;
-    return 0;
+    char key[64];
+    snprintf(key, sizeof key, "TOTK_%s", name);
+    const char *e = cfg_get(key);
+    if (!e || !*e) e = def;
+    return !strcmp(e, "ab") ? 2 : strcmp(e, "0") != 0;
 }
