@@ -157,6 +157,19 @@ The link always keeps the lifted modules' functions in one contiguous range (`ll
 no hot/cold section prefixes): the kernel needs that for asynchronous preemption
 ([runtime/kernel.c](../runtime/kernel.c), `ap_try`), so a profile never reorders code around it.
 
+An initial 1.4.3 measurement on an RTX 5060 Ti at 3440x1440 used two manually played 90-second world-clock runs. The
+PGO build averaged 105.5 fps (79.1 fps in its slowest 120-frame window), against 98.2 fps (75.8 fps slowest window)
+for the non-PGO build: 7.4% higher average throughput and 4.3% in the slowest window. Both runs completed with no
+validation errors, shader failures or skipped draws. Treat this as directional rather than a controlled benchmark:
+the paths were similar but not scripted, the non-PGO build loaded additional mods, and its shader and pipeline caches
+were more complete. The latter favoured the non-PGO build, which nevertheless ran slower.
+
+For a reproducible comparison, use the same profile copy, scripted input, RomFS overlays and warm shader/pipeline
+caches for both builds. Run them one at a time and compare only the `[host] fps:` lines after `frame step: world clock
+starts`. `TOTK_GPU=null` removes Vulkan and GPU variance when measuring lifted-code CPU throughput; set a frame limit
+high enough not to pace the measured scene, but first verify that the chosen rate completes the scripted run on both
+builds.
+
 ## Checks
 
 Before a commit:
