@@ -25,6 +25,7 @@
 #include "nvn_api.h"
 #include "nvn_hmap.h"
 #include "nvn_tex.h"
+#include "platform/platform.h"   // plat_now_ns: the clock lives behind the platform layer on every OS
 #include "tex.h"
 #include "vk.h"
 #include "vk_exec.h"
