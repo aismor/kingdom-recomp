@@ -3,6 +3,7 @@ with a newer release, totk.ini and the event stream. No game files, no tools; st
 
 Run: python tests/installer_test.py
 """
+import errno
 import io
 import json
 import re
@@ -233,6 +234,25 @@ class IniTest(unittest.TestCase):
 
 
 class EventsTest(unittest.TestCase):
+    def test_closed_event_pipe_does_not_stop_the_installation(self):
+        class ClosedPipe:
+            def write(self, text):
+                raise OSError(errno.EBADF, 'Bad file descriptor')
+
+            def flush(self):
+                raise AssertionError('write must fail first')
+
+        with tempfile.TemporaryDirectory() as d:
+            log = Path(d) / 'x.log'
+            rep = Reporter(out=ClosedPipe(), log_path=log)
+            rep.step('prepare', 'done', seconds=1.0)
+            rep.step('cleanup', 'started')
+            rep.close()
+            text = log.read_text(encoding='utf-8')
+            self.assertIn('Preparing the shaders: done', text)
+            self.assertIn('event output unavailable', text)
+            self.assertIn('Cleaning up: started', text)
+
     def test_lines_are_json_and_the_log_is_english(self):
         with tempfile.TemporaryDirectory() as d:
             out = io.StringIO()

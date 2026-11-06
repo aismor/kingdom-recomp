@@ -52,6 +52,9 @@ keeps `profile/`. Saves carry over both ways: 1.4.3 converts a 1.2.1 save on loa
 5. **Prepare** the RomFS patches and the shaders (`tools/make_romfs_patches.py`, `tools/prepare_shaders.py`,
    `totk.exe --prepare-shaders`) in the install folder, then fold the loose shader translations into
    `shader-cache/shader-cache.pack` with `tools/pack_shader_cache.py`.
+   When the graphics driver crashes while building the shaders, `prepare_shaders.py` runs that part again without the
+   variants it was building ([building.md](building.md), step 6), and the setup finishes with a warning that names how
+   many were left out.
 6. **Clean up** the temp folder (generated C and objects, about 1.3 GB).
 
 A cancelled or failed setup resumes from the last finished step (`totk-install.json`).
